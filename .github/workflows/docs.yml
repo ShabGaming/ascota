@@ -1,0 +1,20 @@
+name: docs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - 'mkdocs.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install mkdocs-material mkdocstrings[python] mkdocs-mermaid2-plugin mkdocs-include-markdown-plugin mkdocs-awesome-pages-plugin
+      - run: mkdocs gh-deploy --force
