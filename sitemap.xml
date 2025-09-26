@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/apps/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_classification/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_core/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_core/color/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_core/imaging/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_core/scale/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+    <url>
+         <loc>https://shabgaming.github.io/ASCOTA/api/ascota_core/utils/</loc>
+         <lastmod>2025-09-26</lastmod>
+    </url>
+</urlset>
