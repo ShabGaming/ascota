@@ -898,7 +898,7 @@ to linear RGB color space for proper color processing calculations.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">11</span>
 <span class="normal">12</span>
 <span class="normal">13</span>
@@ -1017,7 +1017,7 @@ to sRGB color space for display or output purposes.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">33</span>
 <span class="normal">34</span>
 <span class="normal">35</span>
@@ -1136,7 +1136,7 @@ color operations. The output is in 8-bit format suitable for OpenCV operations.<
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">55</span>
 <span class="normal">56</span>
 <span class="normal">57</span>
@@ -1247,7 +1247,7 @@ processing or color correction operations.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">73</span>
 <span class="normal">74</span>
 <span class="normal">75</span>
@@ -1356,7 +1356,7 @@ suitable for display or preview purposes.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 90</span>
 <span class="normal"> 91</span>
 <span class="normal"> 92</span>
@@ -1488,7 +1488,7 @@ PNG in bytes format for high-quality output or storage.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">107</span>
 <span class="normal">108</span>
 <span class="normal">109</span>
@@ -1651,7 +1651,7 @@ quantiles. This is used for histogram matching and color transfer operations.</p
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">130</span>
 <span class="normal">131</span>
 <span class="normal">132</span>
@@ -1713,7 +1713,9 @@ quantiles. This is used for histogram matching and color transfer operations.</p
 
 
 <a href="#ascota_core.color.apply_manual_adjustments_linear" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">apply_manual_adjustments_linear</span><span class="p">(</span><span class="n">bgr_lin</span><span class="p">,</span> <span class="n">brightness</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">r_gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">g_gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">b_gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">apply_manual_adjustments_linear</span><span class="p">(</span>
+    <span class="n">bgr_lin</span><span class="p">,</span> <span class="n">brightness</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">contrast</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">gamma</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">r_gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">g_gain</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">b_gain</span><span class="o">=</span><span class="mf">1.0</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -1875,7 +1877,7 @@ converting back to linear.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">156</span>
 <span class="normal">157</span>
 <span class="normal">158</span>
@@ -2055,7 +2057,7 @@ luminance relationships while adjusting color characteristics.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">184</span>
 <span class="normal">185</span>
 <span class="normal">186</span>
@@ -2259,7 +2261,7 @@ This method focuses on chromaticity transfer without affecting luminance.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">216</span>
 <span class="normal">217</span>
 <span class="normal">218</span>
@@ -2467,7 +2469,7 @@ comprehensive color transfer across all channels.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">250</span>
 <span class="normal">251</span>
 <span class="normal">252</span>
@@ -2620,7 +2622,7 @@ operations. The conversion goes through RGB -&gt; sRGB -&gt; linear RGB -&gt; BG
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">289</span>
 <span class="normal">290</span>
 <span class="normal">291</span>
@@ -2760,7 +2762,7 @@ the expected dimensions.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">308</span>
 <span class="normal">309</span>
 <span class="normal">310</span>
@@ -2818,7 +2820,17 @@ the expected dimensions.</p>
 
 
 <a href="#ascota_core.color.match_color_cards_from_pils" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">match_color_cards_from_pils</span><span class="p">(</span><span class="n">original_image</span><span class="p">,</span> <span class="n">original_masks</span><span class="p">,</span> <span class="n">target_image</span><span class="p">,</span> <span class="n">target_masks</span><span class="p">,</span> <span class="n">original_card_types</span><span class="p">,</span> <span class="n">target_card_types</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;lab_mean_std_transfer&#39;</span><span class="p">,</span> <span class="n">n_knots</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">match_color_cards_from_pils</span><span class="p">(</span>
+    <span class="n">original_image</span><span class="p">,</span>
+    <span class="n">original_masks</span><span class="p">,</span>
+    <span class="n">target_image</span><span class="p">,</span>
+    <span class="n">target_masks</span><span class="p">,</span>
+    <span class="n">original_card_types</span><span class="p">,</span>
+    <span class="n">target_card_types</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s2">&quot;lab_mean_std_transfer&quot;</span><span class="p">,</span>
+    <span class="n">n_knots</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -3044,7 +3056,7 @@ or if an unknown method is specified.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">332</span>
 <span class="normal">333</span>
 <span class="normal">334</span>
@@ -3256,7 +3268,13 @@ or if an unknown method is specified.</p>
 
 
 <a href="#ascota_core.color.match_color_cards_from_pipeline_outputs" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="doc-signature highlight"><pre><span></span><code><span class="nf">match_color_cards_from_pipeline_outputs</span><span class="p">(</span><span class="n">original_pipeline_output</span><span class="p">,</span> <span class="n">target_pipeline_output</span><span class="p">,</span> <span class="n">method</span><span class="o">=</span><span class="s1">&#39;lab_mean_std_transfer&#39;</span><span class="p">,</span> <span class="n">n_knots</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<div class="doc-signature highlight"><pre><span></span><code><span class="nf">match_color_cards_from_pipeline_outputs</span><span class="p">(</span>
+    <span class="n">original_pipeline_output</span><span class="p">,</span>
+    <span class="n">target_pipeline_output</span><span class="p">,</span>
+    <span class="n">method</span><span class="o">=</span><span class="s2">&quot;lab_mean_std_transfer&quot;</span><span class="p">,</span>
+    <span class="n">n_knots</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">debug</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span>
 </code></pre></div>
 
     <div class="doc doc-contents ">
@@ -3423,7 +3441,7 @@ method-specific defaults.</p>
 
 
             <details class="quote">
-              <summary>Source code in <code>src/ascota_core/color.py</code></summary>
+              <summary>Source code in <code>src\ascota_core\color.py</code></summary>
               <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">433</span>
 <span class="normal">434</span>
 <span class="normal">435</span>
