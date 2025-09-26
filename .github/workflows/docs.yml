@@ -1,7 +1,7 @@
 name: docs
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
       - 'docs/**'
       - 'src/**'
@@ -9,15 +9,40 @@ on:
       - 'README.md'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
-  build-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - run: pip install mkdocs-material mkdocstrings[python] mkdocs-mermaid2-plugin mkdocs-include-markdown-plugin mkdocs-awesome-pages-plugin
-      - run: mkdocs gh-deploy --force
+      - name: Install deps
+        run: |
+          pip install mkdocs-material mkdocstrings[python] \
+                     mkdocs-mermaid2-plugin mkdocs-include-markdown-plugin \
+                     mkdocs-awesome-pages-plugin black
+      - name: Build site
+        run: mkdocs build --strict --site-dir site
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
 
-permissions:
-  contents: write
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
