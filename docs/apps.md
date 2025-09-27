@@ -21,6 +21,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 streamlit run tests/streamlits/color_correct_streamlit.py
 streamlit run tests/streamlits/scale_streamlit.py
 streamlit run tests/streamlits/segment_streamlit.py
+streamlit run tests/streamlits/color_clustering_streamlit.py
 ```
 
 Open your browser at [http://localhost:8501](http://localhost:8501).
@@ -37,6 +38,16 @@ Open your browser at [http://localhost:8501](http://localhost:8501).
 * Applies **color correction** to normalize pottery sherd images to a selected target image.
 * Useful for ensuring consistent analysis across lighting conditions and excavation seasons.
 * Allows testing of various color correction/transformation algorithms.
+
+---
+
+### 🌈 Color Clustering
+
+**File:** `color_clustering_streamlit.py`
+* Clusters images based on **dominant color features**.
+* Groups photos taken under similar lighting conditions.
+* Helps archaeologists quickly identify and organize images by color similarity and lighting.
+* Useful for batch processing and allows us to select representative images for color correction.
 
 ---
 
