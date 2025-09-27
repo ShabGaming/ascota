@@ -6,6 +6,10 @@ from typing import List, Optional, Tuple, Dict, Any
 import numpy as np
 from PIL import Image
 import cv2
+import os
+import glob
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
 
 # Helpers
 def srgb_to_linear(x: np.ndarray) -> np.ndarray:
@@ -492,3 +496,297 @@ def match_color_cards_from_pipeline_outputs(
         n_knots=n_knots,
         debug=debug,
     )
+
+
+def _extract_corner_regions(bgr_lin: np.ndarray, corner_size: float = 0.1) -> List[np.ndarray]:
+    """Extract four corner regions from an image.
+    
+    Extracts square regions from each corner of the image. The size of each
+    corner region is determined by the corner_size parameter as a fraction
+    of the smaller image dimension.
+    
+    Args:
+        bgr_lin: Linear BGR image array with values in range [0.0, 1.0].
+        corner_size: Size of corner regions as fraction of smaller dimension.
+            Defaults to 0.1 (10%).
+            
+    Returns:
+        List of 4 corner region arrays: [top_left, top_right, bottom_left, bottom_right].
+    """
+    h, w = bgr_lin.shape[:2]
+    corner_pixels = int(min(h, w) * corner_size)
+    
+    corners = [
+        bgr_lin[:corner_pixels, :corner_pixels],           # top_left
+        bgr_lin[:corner_pixels, -corner_pixels:],          # top_right  
+        bgr_lin[-corner_pixels:, :corner_pixels],          # bottom_left
+        bgr_lin[-corner_pixels:, -corner_pixels:]          # bottom_right
+    ]
+    
+    return corners
+
+
+def _select_whitest_corners(corners: List[np.ndarray], n_select: int = 3) -> List[np.ndarray]:
+    """Select the corners closest to white (high L*, low chroma).
+    
+    Analyzes each corner region and selects the n_select corners that are
+    closest to white. This helps avoid selecting corners that contain color
+    cards or other colored objects.
+    
+    Args:
+        corners: List of corner region arrays from _extract_corner_regions().
+        n_select: Number of corners to select. Defaults to 3.
+        
+    Returns:
+        List of selected corner arrays, ordered by whiteness score.
+    """
+    corner_scores = []
+    
+    for i, corner in enumerate(corners):
+        # Convert to LAB for perceptual analysis
+        lab = bgr_linear_to_lab_u8(corner)
+        
+        # Calculate mean L*, a*, b* values
+        mean_L = np.mean(lab[..., 0])  # Lightness
+        mean_a = np.mean(lab[..., 1])  # Green-Red
+        mean_b = np.mean(lab[..., 2])  # Blue-Yellow
+        
+        # Calculate chroma (color saturation)
+        chroma = np.sqrt((mean_a - 128) ** 2 + (mean_b - 128) ** 2)
+        
+        # Whiteness score: high L* (brightness) and low chroma (saturation)
+        # Scale L* from 0-255 to 0-1 for scoring
+        whiteness_score = (mean_L / 255.0) - (chroma / 128.0)
+        
+        corner_scores.append((whiteness_score, i, corner))
+    
+    # Sort by whiteness score (descending) and select top n_select
+    corner_scores.sort(key=lambda x: x[0], reverse=True)
+    selected_corners = [corner for _, _, corner in corner_scores[:n_select]]
+    
+    return selected_corners
+
+
+def _extract_lighting_features(corners: List[np.ndarray]) -> np.ndarray:
+    """Extract lighting feature vector from selected corner regions.
+    
+    Builds a feature vector from the selected corners by computing mean
+    L*a*b* values for each corner. This creates a compact representation
+    of the lighting conditions in the image.
+    
+    Args:
+        corners: List of selected corner region arrays.
+        
+    Returns:
+        Feature vector as 1D numpy array with shape (n_corners * 3,).
+        Each corner contributes 3 values: mean L*, mean a*, mean b*.
+    """
+    features = []
+    
+    for corner in corners:
+        # Convert to LAB color space
+        lab = bgr_linear_to_lab_u8(corner)
+        
+        # Extract mean values for each channel
+        mean_L = np.mean(lab[..., 0])
+        mean_a = np.mean(lab[..., 1]) 
+        mean_b = np.mean(lab[..., 2])
+        
+        features.extend([mean_L, mean_a, mean_b])
+    
+    return np.array(features, dtype=np.float32)
+
+
+def _find_optimal_k_bic(features: np.ndarray, max_k: int = 10) -> int:
+    """Find optimal number of clusters using Bayesian Information Criterion.
+    
+    Tests different values of k and selects the one that minimizes BIC,
+    balancing model fit with complexity. Uses Gaussian Mixture Models
+    for BIC calculation.
+    
+    Args:
+        features: Feature matrix with shape (n_samples, n_features).
+        max_k: Maximum number of clusters to test. Defaults to 10.
+        
+    Returns:
+        Optimal number of clusters.
+    """
+    n_samples = features.shape[0]
+    if n_samples <= 1:
+        return 1
+    
+    max_k = min(max_k, n_samples)
+    bic_scores = []
+    
+    for k in range(1, max_k + 1):
+        try:
+            gmm = GaussianMixture(n_components=k, random_state=42)
+            gmm.fit(features)
+            bic = gmm.bic(features)
+            bic_scores.append(bic)
+        except Exception:
+            # If GMM fails for this k, assign a high BIC score
+            bic_scores.append(np.inf)
+    
+    # Return k with minimum BIC
+    optimal_k = np.argmin(bic_scores) + 1
+    return optimal_k
+
+
+def _cluster_images(features: np.ndarray, k: Optional[int] = None, max_k: Optional[int] = None) -> np.ndarray:
+    """Cluster images based on their lighting features.
+    
+    Performs k-means clustering on the feature vectors. If k is not provided,
+    automatically determines the optimal k using BIC.
+    
+    Args:
+        features: Feature matrix with shape (n_samples, n_features).
+        k: Number of clusters. If None, determined automatically via BIC.
+        max_k: Maximum k to try when auto-selecting via BIC.
+        
+    Returns:
+        Array of cluster labels with length n_samples.
+    """
+    n_samples = features.shape[0]
+    if n_samples <= 1:
+        return np.array([0] * n_samples)
+    
+    if k is None:
+        k = _find_optimal_k_bic(features, max_k=(max_k or 10))
+    
+    k = min(k, n_samples)  # Can't have more clusters than samples
+    
+    if k == 1:
+        return np.array([0] * n_samples)
+    
+    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(features)
+    
+    return labels
+
+
+def group_similar_images_by_lighting(directory: str, k: Optional[int] = None, 
+                                   extensions: List[str] = None, sensitivity: float = 1.0,
+                                   debug: bool = False) -> List[List[str]]:
+    """Group similar images from a directory based on lighting conditions.
+    
+    Analyzes images in a directory and groups them based on lighting similarity.
+    The function examines the four corners of each image, selects the three
+    corners closest to white (to avoid color cards), extracts lighting features,
+    and clusters the images accordingly.
+    
+    Args:
+        directory: Path to directory containing images to analyze.
+        k: Number of clusters. If None, automatically determined via BIC.
+        extensions: List of image file extensions to process. If None, uses
+            common formats: ['.jpg', '.jpeg', '.png'].
+        sensitivity: Float >0 controlling clustering sensitivity. Values >1 increase
+            sensitivity (more clusters, amplifies feature differences). Values <1
+            decrease sensitivity (fewer clusters, mutes differences). Default 1.0.
+        debug: Enable debug output. Defaults to False.
+            
+    Returns:
+        List of lists, where each inner list contains file paths of images
+        with similar lighting conditions.
+        
+    Raises:
+        ValueError: If directory doesn't exist or contains no valid images.
+        Exception: If image processing fails for critical errors.
+    """
+    if not os.path.exists(directory):
+        raise ValueError(f"Directory does not exist: {directory}")
+    if debug:
+        print(f"DEBUG: group_similar_images_by_lighting - directory={directory}, k={k}, sensitivity={sensitivity}")
+    
+    if extensions is None:
+        extensions = ['.jpg', '.jpeg', '.png']
+    
+    # Find all image files
+    image_paths = []
+    for ext in extensions:
+        pattern = os.path.join(directory, f"*{ext}")
+        image_paths.extend(glob.glob(pattern))
+        pattern = os.path.join(directory, f"*{ext.upper()}")
+        image_paths.extend(glob.glob(pattern))
+    
+    if not image_paths:
+        raise ValueError(f"No images found in directory: {directory}")
+    
+    # Extract features from each image
+    features_list = []
+    valid_paths = []
+    
+    for img_path in image_paths:
+        try:
+            # Load image
+            img_pil = Image.open(img_path)
+            bgr_lin = _pil_to_bgr_linear(img_pil)
+            
+            # Extract corner regions
+            corners = _extract_corner_regions(bgr_lin)
+            
+            # Select the 3 whitest corners
+            selected_corners = _select_whitest_corners(corners, n_select=3)
+            
+            # Extract lighting features
+            features = _extract_lighting_features(selected_corners)
+            
+            features_list.append(features)
+            valid_paths.append(img_path)
+            
+        except Exception as e:
+            # Only print debug-style message if debug True, otherwise keep warning
+            if debug:
+                print(f"DEBUG: group_similar_images_by_lighting - failed to process {img_path}: {e}")
+            else:
+                print(f"Warning: Failed to process {img_path}: {e}")
+            continue
+    
+    if not features_list:
+        raise ValueError("No images could be processed successfully")
+    
+    # Stack features into matrix
+    features_matrix = np.vstack(features_list)
+    
+    # Apply sensitivity: scale features to amplify/mute differences
+    try:
+        sens = float(sensitivity)
+    except Exception:
+        sens = 1.0
+    sens = max(0.1, sens)  # prevent zero/negative
+    features_scaled = features_matrix * sens
+    if debug:
+        print(f"DEBUG: group_similar_images_by_lighting - features_matrix.shape={features_matrix.shape}, sens={sens}")
+    
+    n_samples = features_matrix.shape[0]
+    
+    # 'k' is dependent on the number of samples, with a minimum of 10 or n_samples/6
+    number_of_images_factor = max(10, n_samples // 6)
+    if debug:
+        print(f"DEBUG: group_similar_images_by_lighting - n_samples={n_samples}, number_of_images_factor={number_of_images_factor}")
+
+    # Cluster images (pass scaled features and max_k for BIC)
+    if sensitivity == 1.0:
+        proposed_max_k = number_of_images_factor
+    else:
+        # Compute a sensible max_k for BIC based on sensitivity (higher sens will result in more clusters)
+        proposed_max_k = max(2, int(number_of_images_factor * sens))
+        proposed_max_k = min(proposed_max_k, n_samples)
+    if debug:
+        print(f"DEBUG: group_similar_images_by_lighting - n_samples={n_samples}, number_of_images_factor={number_of_images_factor}, proposed_max_k={proposed_max_k}")
+    labels = _cluster_images(features_scaled, k=k, max_k=proposed_max_k)
+    
+    # Group images by cluster
+    n_clusters = len(np.unique(labels))
+    if debug:
+        print(f"DEBUG: group_similar_images_by_lighting - n_clusters={n_clusters}, labels_unique={np.unique(labels)}")
+    grouped_images = [[] for _ in range(n_clusters)]
+    
+    for img_path, label in zip(valid_paths, labels):
+        grouped_images[label].append(img_path)
+    
+    # Remove empty groups and sort by group size (largest first)
+    grouped_images = [group for group in grouped_images if group]
+    grouped_images.sort(key=len, reverse=True)
+    
+    return grouped_images
