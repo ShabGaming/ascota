@@ -709,6 +709,9 @@ def group_similar_images_by_lighting(directory: str, k: Optional[int] = None,
         pattern = os.path.join(directory, f"*{ext.upper()}")
         image_paths.extend(glob.glob(pattern))
     
+    # Remove duplicates that can occur on case-insensitive file systems
+    image_paths = list(set(image_paths))
+    
     if not image_paths:
         raise ValueError(f"No images found in directory: {directory}")
     
