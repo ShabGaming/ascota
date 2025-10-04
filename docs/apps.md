@@ -64,11 +64,12 @@ Open your browser at [http://localhost:8501](http://localhost:8501).
 
 ### ✂️ Segmentation
 
-**File:** `segment_streamlit.py`
+**File:** `segment_swatch_streamlit.py`
 
 * Runs **segmentation models** (RMBG-1.4 + OpenCV) to isolate sherds and measurement cards.
 * Produces clean masks and regions of interest (ROIs) for further analysis.
 * Segments & Classifies color cards, measurement cards in the image.
+* Generates an image swatch of the sherd.
 
 ---
 

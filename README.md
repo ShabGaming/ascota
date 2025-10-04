@@ -25,6 +25,7 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
   - Color card detection, classification, and **color correction**  
   - Pixel-to-centimeter **scale estimation** using measurement cards  
   - Surface area estimation of sherds  
+  - Generate swatch images from segmented sherds
 
 ➡ Outputs: clean, standardized, and calibrated images ready for classification.
 
