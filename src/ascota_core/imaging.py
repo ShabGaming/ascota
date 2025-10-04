@@ -1364,3 +1364,233 @@ def _split_and_filter_cutouts(result_image: Union[Image.Image, np.ndarray],
         print(f"DEBUG: _split_and_filter_cutouts - Kept {np.unique(labels[kept_mask>0]).size} components; removed {num_labels-1 - np.unique(labels[kept_mask>0]).size}")
 
     return filtered_res, filtered_mask
+
+
+def generate_swatch(pil_image: Image.Image,
+                    swatch_size: Tuple[int, int] = (1000, 500),
+                    target_dpi: int = 1200,
+                    pp_cm_original: Optional[float] = None,
+                    pp_cm_target: Optional[float] = None,
+                    alpha_threshold: int = 10,
+                    coarse_angle_step: int = 15,
+                    fine_angle_step: int = 1,
+                    debug: bool = False) -> Image.Image:
+    """Generate a rotated coverage-optimized swatch from a transparent image.
+
+    Given an RGBA image with transparency, this function finds a 1000x500 pixel
+    (default) swatch centered on the object's (non-transparent area) centroid,
+    allowing rotation to maximize the number of foreground pixels captured.
+
+    Strategy:
+      1. Ensure RGBA & build binary mask using alpha > ``alpha_threshold``.
+      2. If object smaller than desired swatch, uniformly upscale image so the
+         object's bounding box exceeds the swatch with a modest margin.
+      3. Perform a coarse rotation search (0..179 degrees) at
+         ``coarse_angle_step`` increments. Track coverage (foreground pixels
+         inside the candidate swatch / swatch area).
+      4. Refine around best coarse angle using ``fine_angle_step`` steps.
+      5. Extract the crop (padding with transparency if crop extends beyond
+         image bounds). DPI metadata is set to ``target_dpi``.
+
+    Args:
+        pil_image: Input PIL image (preferably RGBA) with transparent background.
+        swatch_size: Desired (width, height) of output swatch in pixels.
+        target_dpi: DPI metadata to tag on the output image.
+        pp_cm_original: Original pixels-per-centimeter of the image. If provided
+            along with pp_cm_target (>0), the image is uniformly rescaled by
+            (pp_cm_target / pp_cm_original) before swatch generation.
+        pp_cm_target: Target pixels-per-centimeter to achieve prior to swatch
+            rotation/cropping. Ignored unless pp_cm_original also provided.
+        alpha_threshold: Alpha threshold to consider a pixel part of object.
+        coarse_angle_step: Degrees per step for coarse search.
+        fine_angle_step: Degrees per step for fine search window.
+        debug: Print diagnostic information if True.
+
+    Returns:
+        PIL Image (RGBA) sized exactly ``swatch_size``.
+
+    Raises:
+        ValueError: If no non-transparent pixels are found or swatch dimensions invalid.
+    """
+    # Validate swatch dimensions
+    sw_w, sw_h = swatch_size
+    if sw_w <= 0 or sw_h <= 0:
+        raise ValueError("generate_swatch: swatch_size must contain positive dimensions")
+
+    # Ensure RGBA
+    if pil_image.mode != "RGBA":
+        pil_image = pil_image.convert("RGBA")
+        if debug:
+            print("DEBUG: generate_swatch - Converted input to RGBA")
+
+    # Physical scaling to match target pixels-per-centimeter if specified
+    if (pp_cm_original is not None and pp_cm_target is not None
+            and pp_cm_original > 0 and pp_cm_target > 0):
+        scale_pp = pp_cm_target / pp_cm_original
+        if abs(scale_pp - 1.0) > 1e-6:
+            new_w = max(1, int(round(pil_image.width * scale_pp)))
+            new_h = max(1, int(round(pil_image.height * scale_pp)))
+            if debug:
+                print(f"DEBUG: generate_swatch - Scaling by pp_cm ratio {scale_pp:.4f} to {new_w}x{new_h} (from {pil_image.width}x{pil_image.height})")
+            pil_image = pil_image.resize((new_w, new_h), Image.LANCZOS)
+
+    arr = np.array(pil_image)
+    if arr.shape[2] < 4:
+        raise ValueError("generate_swatch: input image must have an alpha channel")
+    alpha = arr[:, :, 3]
+    mask = (alpha > alpha_threshold).astype(np.uint8)
+
+    if mask.sum() == 0:
+        raise ValueError("generate_swatch: no non-transparent pixels detected")
+
+    # Object bounding box
+    ys, xs = np.nonzero(mask)
+    x_min, x_max = xs.min(), xs.max()
+    y_min, y_max = ys.min(), ys.max()
+    bbox_w = x_max - x_min + 1
+    bbox_h = y_max - y_min + 1
+
+    if debug:
+        print(f"DEBUG: generate_swatch - Original bbox (x={x_min}, y={y_min}, w={bbox_w}, h={bbox_h})")
+
+    # Upscale if object smaller than swatch in either dimension
+    scale_factor = 1.0
+    if bbox_w < sw_w or bbox_h < sw_h:
+        scale_factor = max(sw_w / max(bbox_w, 1), sw_h / max(bbox_h, 1)) * 1.05  # add margin
+        new_w = max(1, int(round(pil_image.width * scale_factor)))
+        new_h = max(1, int(round(pil_image.height * scale_factor)))
+        pil_image = pil_image.resize((new_w, new_h), Image.LANCZOS)
+        if debug:
+            print(f"DEBUG: generate_swatch - Upscaled by {scale_factor:.2f} to {new_w}x{new_h}")
+        arr = np.array(pil_image)
+        alpha = arr[:, :, 3]
+        mask = (alpha > alpha_threshold).astype(np.uint8)
+
+        # Recompute bounding box after upscaling
+        ys, xs = np.nonzero(mask)
+        x_min, x_max = xs.min(), xs.max()
+        y_min, y_max = ys.min(), ys.max()
+
+    # Centroid for horizontal (0°) attempt
+    ys, xs = np.nonzero(mask)
+    cx = xs.mean()
+    cy = ys.mean()
+    left0 = int(round(cx - sw_w / 2))
+    top0 = int(round(cy - sw_h / 2))
+    right0 = left0 + sw_w
+    bottom0 = top0 + sw_h
+
+    # Check if the object's bounding box fits entirely inside this 0° swatch
+    if (left0 <= x_min and right0 >= x_max + 1 and top0 <= y_min and bottom0 >= y_max + 1):
+        # Prepare final swatch canvas (transparent)
+        out = Image.new("RGBA", (sw_w, sw_h), (0, 0, 0, 0))
+        img_w0, img_h0 = pil_image.size
+        src_left = max(left0, 0)
+        src_top = max(top0, 0)
+        src_right = min(right0, img_w0)
+        src_bottom = min(bottom0, img_h0)
+        if src_right > src_left and src_bottom > src_top:
+            crop0 = pil_image.crop((src_left, src_top, src_right, src_bottom))
+            dst_x0 = src_left - left0
+            dst_y0 = src_top - top0
+            out.paste(crop0, (dst_x0, dst_y0))
+        if debug:
+            print("DEBUG: generate_swatch - Early exit at 0° (horizontal) orientation; full object covered")
+        out.info["dpi"] = (target_dpi, target_dpi)
+        return out
+
+    # Helper to evaluate a rotation angle
+    def evaluate_angle(angle_deg: float):
+        # Rotate image & mask
+        r_img = pil_image.rotate(angle_deg, expand=True, resample=Image.BICUBIC)
+        r_mask_img = Image.fromarray(mask * 255).rotate(angle_deg, expand=True, resample=Image.NEAREST)
+        r_mask = np.array(r_mask_img) > 0
+        ry, rx = np.nonzero(r_mask)
+        if len(ry) == 0:
+            return 0.0, (0, 0, 0, 0), r_img, r_mask
+        rcx = rx.mean()
+        rcy = ry.mean()
+        # Center crop box
+        left = int(round(rcx - sw_w / 2))
+        top = int(round(rcy - sw_h / 2))
+        right = left + sw_w
+        bottom = top + sw_h
+        # Intersection for coverage
+        img_w, img_h = r_img.size
+        crop_left = max(left, 0)
+        crop_top = max(top, 0)
+        crop_right = min(right, img_w)
+        crop_bottom = min(bottom, img_h)
+        if crop_right <= crop_left or crop_bottom <= crop_top:
+            return 0.0, (left, top, right, bottom), r_img, r_mask
+        mask_crop = r_mask[crop_top:crop_bottom, crop_left:crop_right]
+        coverage = mask_crop.sum() / float(sw_w * sw_h)  # Normalized by full swatch area
+        return coverage, (left, top, right, bottom), r_img, r_mask
+
+    # Coarse rotation search
+    best_coverage = -1.0
+    best_tuple = None  # (coverage, angle, crop_box, rotated_img, rotated_mask)
+    for angle in range(0, 180, max(1, coarse_angle_step)):
+        coverage, crop_box, r_img, r_mask = evaluate_angle(angle)
+        if coverage > best_coverage:
+            best_coverage = coverage
+            best_tuple = (coverage, angle, crop_box, r_img, r_mask)
+        if debug:
+            print(f"DEBUG: generate_swatch - Coarse angle {angle:3d}° coverage={coverage:.5f}")
+        # Early terminate coarse search if perfect (or near-perfect) coverage achieved
+        if best_coverage >= 0.99999:
+            if debug:
+                print("DEBUG: generate_swatch - Early break from coarse search (coverage >= 0.99999)")
+            break
+
+    if best_tuple is None:
+        # Fallback: empty transparent swatch
+        if debug:
+            print("DEBUG: generate_swatch - No coverage found, returning empty swatch")
+        empty = Image.new("RGBA", (sw_w, sw_h), (0, 0, 0, 0))
+        empty.info["dpi"] = (target_dpi, target_dpi)
+        return empty
+
+    _, coarse_angle, _, _, _ = best_tuple
+
+    # Fine search around coarse angle
+    fine_start = max(0, int(coarse_angle - coarse_angle_step))
+    fine_end = min(179, int(coarse_angle + coarse_angle_step))
+    if best_coverage < 0.99999:  # Only refine if not already perfect
+        for angle in range(fine_start, fine_end + 1, max(1, fine_angle_step)):
+            coverage, crop_box, r_img, r_mask = evaluate_angle(angle)
+            if coverage > best_coverage:
+                best_coverage = coverage
+                best_tuple = (coverage, angle, crop_box, r_img, r_mask)
+            if debug and angle % 5 == 0:
+                print(f"DEBUG: generate_swatch - Fine angle {angle:3d}° coverage={coverage:.5f}")
+            if best_coverage >= 0.99999:
+                if debug:
+                    print("DEBUG: generate_swatch - Early break from fine search (coverage >= 0.99999)")
+                break
+
+    best_coverage, best_angle, crop_box, best_img, _ = best_tuple
+    if debug:
+        print(f"DEBUG: generate_swatch - Selected angle {best_angle}° with coverage {best_coverage:.5f}")
+
+    # Prepare final swatch canvas (transparent)
+    out = Image.new("RGBA", (sw_w, sw_h), (0, 0, 0, 0))
+    left, top, right, bottom = crop_box
+    img_w, img_h = best_img.size
+    # Source coords intersection
+    src_left = max(left, 0)
+    src_top = max(top, 0)
+    src_right = min(right, img_w)
+    src_bottom = min(bottom, img_h)
+    if src_right > src_left and src_bottom > src_top:
+        crop = best_img.crop((src_left, src_top, src_right, src_bottom))
+        dst_x = src_left - left  # offset relative to swatch
+        dst_y = src_top - top
+        out.paste(crop, (dst_x, dst_y))
+    else:
+        if debug:
+            print("DEBUG: generate_swatch - Computed crop outside bounds; returning blank swatch")
+
+    # Attach DPI metadata (persisted on save)
+    out.info["dpi"] = (target_dpi, target_dpi)
+    return out

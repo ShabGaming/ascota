@@ -24,6 +24,8 @@ st.set_page_config(
     layout="wide"
 )
 
+from src.ascota_core.imaging import generate_swatch
+
 # Initialize session state
 if 'current_page' not in st.session_state:
     st.session_state.current_page = 'main'
@@ -201,6 +203,11 @@ if st.session_state.current_page == 'main':
                         )
                         
                         st.success("RMBG processing completed!")
+                        
+                        swatch_img = generate_swatch(result_image, pp_cm_original=200, pp_cm_target=472, debug=True)
+                        st.markdown("---")
+                        st.subheader("🎨 Coverage-Optimized Swatch")
+                        st.image(swatch_img, caption="Generated Swatch", width=500)
                         
                     except Exception as e:
                         st.error(f"RMBG processing failed: {str(e)}")
