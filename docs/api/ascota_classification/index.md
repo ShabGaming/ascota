@@ -16,3 +16,6 @@ In this package, we focus on:
 
 - **Pattern/Decoration Classification**: Use vision transformer models to identify and classify decorative patterns
     on pottery fragments.  
+
+## Submodules
+- [color](color.md): color-based classification of pottery sherds.

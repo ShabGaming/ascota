@@ -72,6 +72,7 @@ nav:
           - utils: api/ascota_core/utils.md
       - ascota_classification:
           - Overview: api/ascota_classification/index.md
+          - color: api/ascota_classification/color.md
 
 watch:
   - src   # auto-reload when code changes

@@ -22,6 +22,7 @@ streamlit run tests/streamlits/color_correct_streamlit.py
 streamlit run tests/streamlits/scale_streamlit.py
 streamlit run tests/streamlits/segment_streamlit.py
 streamlit run tests/streamlits/color_clustering_streamlit.py
+streamlit run tests/streamlits/color_classification_streamlit.py
 ```
 
 Open your browser at [http://localhost:8501](http://localhost:8501).
@@ -70,6 +71,17 @@ Open your browser at [http://localhost:8501](http://localhost:8501).
 * Produces clean masks and regions of interest (ROIs) for further analysis.
 * Segments & Classifies color cards, measurement cards in the image.
 * Generates an image swatch of the sherd.
+
+---
+
+### 🖌️ Color Classification
+
+**File:** `color_classification_streamlit.py`
+
+* Classifies pottery sherds based on their color attributes.
+* Implements three methods: lab thresholding, k-means clustering, and CLIP-ViT based classification.
+* Provides visualizations of color distributions and dominant colors.
+* Helps archaeologists systematically categorize sherds for analysis.
 
 ---
 
