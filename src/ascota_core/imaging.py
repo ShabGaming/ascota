@@ -208,7 +208,7 @@ class TemplateMatcher:
             raise ValueError(f"Similarity calculation failed for template '{self.name}': {e}")
 
 
-def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray) -> Optional[np.ndarray]:
+def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray, debug: bool = False) -> Optional[np.ndarray]:
     """Extract rectangular region defined by polygon without perspective warping.
     
     Extracts a bounding rectangle around the detected polygon, with optional
@@ -218,6 +218,7 @@ def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray) -> Opti
     Args:
         img_bgr: Input image in OpenCV BGR format as numpy array.
         poly_xy: Polygon coordinates as numpy array with shape (4, 2).
+        debug: If True, print debug information during extraction.
         
     Returns:
         Extracted rectangular region as numpy array, or None if extraction
@@ -230,7 +231,8 @@ def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray) -> Opti
     refined_poly = _refine_polygon_with_contours(img_bgr, poly_xy, x, y, w, h)
     if refined_poly is not None:
         x, y, w, h = cv2.boundingRect(refined_poly.astype(np.int32))
-        print(f"DEBUG: extract_rectangular_region - refined bounding box: ({x},{y},{w},{h})")
+        if debug:
+            print(f"DEBUG: extract_rectangular_region - refined bounding box: ({x},{y},{w},{h})")
     
     # Ensure coordinates are within image bounds
     img_h, img_w = img_bgr.shape[:2]
@@ -241,7 +243,8 @@ def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray) -> Opti
     
     # Ensure minimum size
     if w < 10 or h < 10:
-        print(f"DEBUG: extract_rectangular_region - too small: {w}x{h}")
+        if debug:
+            print(f"DEBUG: extract_rectangular_region - too small: {w}x{h}")
         return None
     
     # Extract rectangular region
@@ -584,7 +587,7 @@ class CardDetector:
         for P in polys:
             # Additional validation before extraction
             if self._validate_card_polygon(P, img_bgr.shape):
-                crop = extract_rectangular_region(img_bgr, P)
+                crop = extract_rectangular_region(img_bgr, P, debug=debug)
                 if crop is not None:
                     crops.append(crop)
                     valid_polys.append(P)
