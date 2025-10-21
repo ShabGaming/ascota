@@ -249,7 +249,8 @@ def extract_rectangular_region(img_bgr: np.ndarray, poly_xy: np.ndarray, debug: 
     
     # Extract rectangular region
     extracted = img_bgr[y:y+h, x:x+w]
-    print(f"DEBUG: extract_rectangular_region - extracted {extracted.shape} from region ({x},{y},{w},{h})")
+    if debug:
+        print(f"DEBUG: extract_rectangular_region - extracted {extracted.shape} from region ({x},{y},{w},{h})")
     
     return extracted
 
@@ -420,7 +421,8 @@ class CardDetector:
                 if area <= max_card_area:
                     valid_polys.append(poly)
                 else:
-                    print(f"DEBUG: Rejected card too large: {area:.0f} pixels (max: {max_card_area:.0f})")
+                    if debug:
+                        print(f"DEBUG: Rejected card too large: {area:.0f} pixels (max: {max_card_area:.0f})")
             
             all_polys.extend(valid_polys)
         
@@ -429,7 +431,8 @@ class CardDetector:
         
         # If we have fewer than 2 cards, try contour-based fallback
         if len(all_polys) < 2:
-            print("DEBUG: Using contour-based fallback for additional detection")
+            if debug:
+                print("DEBUG: Using contour-based fallback for additional detection")
             contour_polys = self._contour_based_detection(img_bgr, all_polys, max_card_area, debug=debug)
             all_polys.extend(contour_polys)
             # Re-apply NMS to the combined results
