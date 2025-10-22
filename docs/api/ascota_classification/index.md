@@ -19,3 +19,4 @@ In this package, we focus on:
 
 ## Submodules
 - [color](color.md): color-based classification of pottery sherds.
+- [decoration](decoration.md): decoration pattern classification of pottery sherds.
