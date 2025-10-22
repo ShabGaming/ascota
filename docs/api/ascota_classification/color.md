@@ -1,4 +1,4 @@
-# ascota_core.color
+# ascota_classification.color
 
 The classification `color` module provides functionality for classifying
 pottery sherds based on their color attributes. It includes methods for
