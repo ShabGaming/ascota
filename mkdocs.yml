@@ -74,7 +74,8 @@ nav:
           - Overview: api/ascota_classification/index.md
           - color: api/ascota_classification/color.md
           - decoration: api/ascota_classification/decoration.md
-
+          - type: api/ascota_classification/type.md
+          
 watch:
   - src   # auto-reload when code changes
 
