@@ -1,0 +1,94 @@
+"""Export routes for rendering corrected images."""
+
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+import logging
+
+from app.services.session_store import get_session_store
+from app.services.exporter import export_session_images
+from app.services.models import ExportResponse, JobStatus, CorrectionParams
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+def _run_export_job(session_id: str, job_id: str):
+    """Background task to export images."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+    
+    if not session:
+        logger.error(f"Session {session_id} not found")
+        return
+    
+    job = session.get_job(job_id)
+    if not job:
+        logger.error(f"Job {job_id} not found")
+        return
+    
+    try:
+        job.status = JobStatus.RUNNING
+        job.progress = 0.0
+        job.message = "Starting export..."
+        
+        # Prepare clusters with params
+        clusters_with_params = []
+        for cluster in session.clusters:
+            params = cluster.correction_params or CorrectionParams()
+            clusters_with_params.append((cluster.image_ids, params))
+        
+        # Count total images
+        total_images = sum(len(image_ids) for image_ids, _ in clusters_with_params)
+        
+        if total_images == 0:
+            job.status = JobStatus.FAILED
+            job.error = "No images to export"
+            return
+        
+        # Progress callback for real-time updates
+        def update_progress(current: int, total: int, message: str):
+            if total > 0:
+                job.progress = current / total
+            job.message = message or f"Exporting {current}/{total} images..."
+        
+        # Run export with progress callback
+        summary = export_session_images(
+            session.images,
+            clusters_with_params,
+            session.options.image_source.value,
+            session.options.overwrite,
+            progress_callback=update_progress
+        )
+        
+        job.status = JobStatus.COMPLETED
+        job.progress = 1.0
+        job.message = f"Export complete: {summary.total_files_written} files written"
+        job.result = summary.dict()
+        
+        logger.info(f"Export job {job_id} completed: {summary.total_files_written} files written")
+        
+    except Exception as e:
+        logger.error(f"Export job {job_id} failed: {e}", exc_info=True)
+        job.status = JobStatus.FAILED
+        job.error = str(e)
+
+
+@router.post("/{session_id}/export", response_model=ExportResponse)
+async def export_session(session_id: str, background_tasks: BackgroundTasks):
+    """Export all corrected images for a session."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if not session.clusters:
+        raise HTTPException(status_code=400, detail="No clusters to export")
+    
+    # Create export job
+    job = session.create_job()
+    
+    # Start background task
+    background_tasks.add_task(_run_export_job, session_id, job.job_id)
+    
+    return ExportResponse(job_id=job.job_id)
+

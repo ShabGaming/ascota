@@ -1,0 +1,2 @@
+"""Color correction backend application."""
+
