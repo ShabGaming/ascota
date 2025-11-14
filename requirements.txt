@@ -16,6 +16,7 @@ timm>=1.0.19
 sklearn>=1.7.2
 plotly
 openai
+rawpy==0.19.0
 
 # Documentation requirements
 mkdocs-material
@@ -30,3 +31,10 @@ typing
 scikit-image
 huggingface_hub
 transformers>=4.39.1
+
+# FastAPI requirements
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
