@@ -64,9 +64,25 @@ function ClusterBoard({
   const [discoveredImages, setDiscoveredImages] = useState<Record<string, ImageItem> | null>(null)
   const [reclusterSensitivity, setReclusterSensitivity] = useState(1.0)
   const [canUndo, setCanUndo] = useState(false)
+  const [fullscreenClusterId, setFullscreenClusterId] = useState<string | null>(null)
   
   const toast = useToast()
   const { clusters, images, setClusters, moveImageLocally, selectedImageId, selectedClusterId } = useSessionStore()
+  
+  const handleToggleFullscreen = (clusterId: string) => {
+    setFullscreenClusterId(fullscreenClusterId === clusterId ? null : clusterId)
+  }
+  
+  // Handle ESC key to exit fullscreen
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && fullscreenClusterId) {
+        setFullscreenClusterId(null)
+      }
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [fullscreenClusterId])
   
   // Get session info and discovered images
   const { data: sessionInfo } = useQuery(
@@ -429,16 +445,37 @@ function ClusterBoard({
       {/* Main content */}
       <Box>
         <DragDropContext onDragEnd={handleDragEnd}>
-          <HStack align="start" spacing={4} p={6} overflowX="auto" h="calc(100vh - 180px)">
-            {clusters.map((cluster) => (
-              <ClusterColumn
-                key={cluster.id}
-                cluster={cluster}
-                images={images}
-                sessionId={sessionId}
-              />
-            ))}
-          </HStack>
+          {fullscreenClusterId ? (
+            // Fullscreen mode: show only the fullscreen cluster, expanded
+            <Box p={6} h="calc(100vh - 180px)" overflowY="auto">
+              {clusters
+                .filter(c => c.id === fullscreenClusterId)
+                .map((cluster) => (
+                  <ClusterColumn
+                    key={cluster.id}
+                    cluster={cluster}
+                    images={images}
+                    sessionId={sessionId}
+                    isFullscreen={true}
+                    onToggleFullscreen={() => handleToggleFullscreen(cluster.id)}
+                  />
+                ))}
+            </Box>
+          ) : (
+            // Normal mode: show all clusters in horizontal scroll
+            <HStack align="start" spacing={4} p={6} overflowX="auto" h="calc(100vh - 180px)">
+              {clusters.map((cluster) => (
+                <ClusterColumn
+                  key={cluster.id}
+                  cluster={cluster}
+                  images={images}
+                  sessionId={sessionId}
+                  isFullscreen={false}
+                  onToggleFullscreen={() => handleToggleFullscreen(cluster.id)}
+                />
+              ))}
+            </HStack>
+          )}
         </DragDropContext>
       </Box>
       

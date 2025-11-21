@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { ClusterResponse, ImageItem, Cluster } from '../api/client'
+import { ClusterResponse, ImageItem, Cluster, CorrectionParams } from '../api/client'
 
 interface SessionState {
   sessionId: string | null
@@ -7,12 +7,17 @@ interface SessionState {
   images: Record<string, ImageItem>
   selectedImageId: string | null
   selectedClusterId: string | null
+  pendingOverallCorrection: Record<string, CorrectionParams | null> // clusterId -> pending params
+  pendingIndividualCorrection: Record<string, CorrectionParams | null> // imageId -> pending params
   
   setSession: (sessionId: string) => void
   setClusters: (data: ClusterResponse) => void
   updateClusterCorrection: (clusterId: string, cluster: Cluster) => void
   moveImageLocally: (imageId: string, targetClusterId: string) => void
   setSelectedImage: (imageId: string | null, clusterId: string | null) => void
+  setPendingOverallCorrection: (clusterId: string, params: CorrectionParams | null) => void
+  setPendingIndividualCorrection: (imageId: string, params: CorrectionParams | null) => void
+  clearPendingCorrections: () => void
   reset: () => void
 }
 
@@ -22,6 +27,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   images: {},
   selectedImageId: null,
   selectedClusterId: null,
+  pendingOverallCorrection: {},
+  pendingIndividualCorrection: {},
   
   setSession: (sessionId: string) => {
     set({ sessionId })
@@ -59,7 +66,38 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   setSelectedImage: (imageId: string | null, clusterId: string | null) => {
-    set({ selectedImageId: imageId, selectedClusterId: clusterId })
+    // Clear pending corrections when selecting a different image or closing
+    set({ 
+      selectedImageId: imageId, 
+      selectedClusterId: clusterId,
+      pendingOverallCorrection: {},
+      pendingIndividualCorrection: {}
+    })
+  },
+  
+  setPendingOverallCorrection: (clusterId: string, params: CorrectionParams | null) => {
+    set(state => ({
+      pendingOverallCorrection: {
+        ...state.pendingOverallCorrection,
+        [clusterId]: params
+      }
+    }))
+  },
+  
+  setPendingIndividualCorrection: (imageId: string, params: CorrectionParams | null) => {
+    set(state => ({
+      pendingIndividualCorrection: {
+        ...state.pendingIndividualCorrection,
+        [imageId]: params
+      }
+    }))
+  },
+  
+  clearPendingCorrections: () => {
+    set({
+      pendingOverallCorrection: {},
+      pendingIndividualCorrection: {}
+    })
   },
   
   reset: () => {
@@ -68,7 +106,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       clusters: [],
       images: {},
       selectedImageId: null,
-      selectedClusterId: null
+      selectedClusterId: null,
+      pendingOverallCorrection: {},
+      pendingIndividualCorrection: {}
     })
   }
 }))

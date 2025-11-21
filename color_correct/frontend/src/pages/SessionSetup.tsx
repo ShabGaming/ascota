@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Box,
   Button,
@@ -27,10 +27,25 @@ import {
   Card,
   CardBody,
   Select,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Badge,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  TableContainer,
+  Code,
 } from '@chakra-ui/react'
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons'
-import { createSession } from '../api/client'
+import { createSession, listSessions, restoreSession, SessionInfo, deleteSession } from '../api/client'
 import { useSessionStore } from '../state/session'
+import { useQuery, useMutation, useQueryClient } from 'react-query'
 
 interface SessionSetupProps {
   onComplete: () => void
@@ -39,15 +54,76 @@ interface SessionSetupProps {
 function SessionSetup({ onComplete }: SessionSetupProps) {
   const [contexts, setContexts] = useState<string[]>([])
   const [currentPath, setCurrentPath] = useState('')
-  const [imageSource, setImageSource] = useState<"450px" | "1500px" | "3000px" | "raw_mode">("3000px")
   const [overwrite, setOverwrite] = useState(false)
   const [useCustomK, setUseCustomK] = useState(false)
   const [customK, setCustomK] = useState(3)
   const [sensitivity, setSensitivity] = useState(1.0)
+  const [previewResolution, setPreviewResolution] = useState(1500)
   const [isLoading, setIsLoading] = useState(false)
   
   const toast = useToast()
   const setSession = useSessionStore(state => state.setSession)
+  const queryClient = useQueryClient()
+  
+  // Fetch sessions list
+  const { data: sessionsData, refetch: refetchSessions } = useQuery(
+    ['sessions'],
+    listSessions,
+    {
+      refetchOnMount: true,
+    }
+  )
+  
+  // Restore session mutation
+  const restoreMutation = useMutation(
+    (sessionId: string) => restoreSession(sessionId),
+    {
+      onSuccess: (data) => {
+        setSession(data.session_id)
+        toast({
+          title: 'Session restored',
+          description: 'Session has been restored from disk',
+          status: 'success',
+          duration: 3000,
+        })
+        onComplete()
+      },
+      onError: (error) => {
+        toast({
+          title: 'Failed to restore session',
+          description: error instanceof Error ? error.message : 'Unknown error',
+          status: 'error',
+          duration: 5000,
+        })
+      },
+    }
+  )
+  
+  // Delete session mutation
+  const deleteMutation = useMutation(
+    (sessionId: string) => deleteSession(sessionId),
+    {
+      onSuccess: () => {
+        // Always refresh the list, even if session wasn't found (idempotent delete)
+        refetchSessions()
+        toast({
+          title: 'Session deleted',
+          status: 'success',
+          duration: 2000,
+        })
+      },
+      onError: (error) => {
+        // Even on error, try to refresh the list to remove invalid sessions
+        refetchSessions()
+        toast({
+          title: 'Session deleted',
+          description: 'Session removed from list (may not have existed)',
+          status: 'info',
+          duration: 3000,
+        })
+      },
+    }
+  )
   
   const handleAddContext = () => {
     if (currentPath.trim()) {
@@ -77,10 +153,11 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
       const response = await createSession({
         contexts,
         options: {
-          image_source: imageSource,
+          image_source: "raw_mode", // Always use RAW mode
           overwrite,
           custom_k: useCustomK ? customK : undefined,
           sensitivity,
+          preview_resolution: previewResolution,
         },
       })
       
@@ -93,6 +170,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
         duration: 2000,
       })
       
+      refetchSessions()
       onComplete()
     } catch (error) {
       toast({
@@ -102,6 +180,15 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
         duration: 5000,
       })
       setIsLoading(false)
+    }
+  }
+  
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleString()
+    } catch {
+      return dateString
     }
   }
   
@@ -115,7 +202,16 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
           </Text>
         </Box>
         
-        <Card>
+        <Tabs>
+          <TabList>
+            <Tab>New Session</Tab>
+            <Tab>Sessions ({sessionsData?.persisted_sessions?.length || 0})</Tab>
+          </TabList>
+          
+          <TabPanels>
+            <TabPanel>
+              <VStack spacing={8} align="stretch">
+                <Card>
           <CardBody>
             <VStack spacing={6} align="stretch">
               <FormControl>
@@ -164,21 +260,24 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
               
               <FormControl>
                 <FormLabel>Image Source</FormLabel>
+                <Text fontSize="sm" color="gray.600" p={2} bg="blue.50" borderRadius="md">
+                  RAW Mode (always enabled) - All images must have RAW files
+                </Text>
+              </FormControl>
+              
+              <FormControl>
+                <FormLabel>Preview Resolution</FormLabel>
                 <Select
-                  value={imageSource}
-                  onChange={(e) => setImageSource(e.target.value as typeof imageSource)}
+                  value={previewResolution}
+                  onChange={(e) => setPreviewResolution(Number(e.target.value))}
                   colorScheme="brand"
                 >
-                  <option value="450px">450px</option>
-                  <option value="1500px">1500px</option>
-                  <option value="3000px">3000px</option>
-                  <option value="raw_mode">Raw Mode</option>
+                  <option value={450}>450px</option>
+                  <option value={1500}>1500px</option>
+                  <option value={3000}>3000px</option>
                 </Select>
                 <Text fontSize="sm" color="gray.600" mt={1}>
-                  {imageSource === "3000px" && "Uses 3000px, falls back to 1500px, then 450px"}
-                  {imageSource === "1500px" && "Uses 1500px, falls back to 450px"}
-                  {imageSource === "450px" && "Uses 450px only"}
-                  {imageSource === "raw_mode" && "Uses RAW files, falls back to 3000px, 1500px, then 450px"}
+                  Resolution for preview images generated from RAW files
                 </Text>
               </FormControl>
               
@@ -243,15 +342,80 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
           </CardBody>
         </Card>
         
-        <Button
-          colorScheme="brand"
-          size="lg"
-          onClick={handleStart}
-          isLoading={isLoading}
-          loadingText="Creating session..."
-        >
-          Start Color Correction
-        </Button>
+                <Button
+                  colorScheme="brand"
+                  size="lg"
+                  onClick={handleStart}
+                  isLoading={isLoading}
+                  loadingText="Creating session..."
+                >
+                  Start Color Correction
+                </Button>
+              </VStack>
+            </TabPanel>
+            
+            <TabPanel>
+              <Card>
+                <CardBody>
+                  {sessionsData?.persisted_sessions && sessionsData.persisted_sessions.length > 0 ? (
+                    <TableContainer>
+                      <Table variant="simple">
+                        <Thead>
+                          <Tr>
+                            <Th>Session ID</Th>
+                            <Th>Saved At</Th>
+                            <Th>Contexts</Th>
+                            <Th>Clusters</Th>
+                            <Th>Images</Th>
+                            <Th>Actions</Th>
+                          </Tr>
+                        </Thead>
+                        <Tbody>
+                          {sessionsData.persisted_sessions.map((session: SessionInfo) => (
+                            <Tr key={session.session_id}>
+                              <Td>
+                                <Code fontSize="xs">{session.session_id.slice(0, 8)}...</Code>
+                              </Td>
+                              <Td>{formatDate(session.saved_at)}</Td>
+                              <Td>{session.context_count}</Td>
+                              <Td>{session.cluster_count}</Td>
+                              <Td>{session.image_count}</Td>
+                              <Td>
+                                <HStack spacing={2}>
+                                  <Button
+                                    size="sm"
+                                    colorScheme="brand"
+                                    onClick={() => restoreMutation.mutate(session.session_id)}
+                                    isLoading={restoreMutation.isLoading}
+                                  >
+                                    Restore
+                                  </Button>
+                                  <IconButton
+                                    aria-label="Delete session"
+                                    icon={<DeleteIcon />}
+                                    size="sm"
+                                    colorScheme="red"
+                                    variant="ghost"
+                                    onClick={() => deleteMutation.mutate(session.session_id)}
+                                    isLoading={deleteMutation.isLoading}
+                                  />
+                                </HStack>
+                              </Td>
+                            </Tr>
+                          ))}
+                        </Tbody>
+                      </Table>
+                    </TableContainer>
+                  ) : (
+                    <Text color="gray.600" textAlign="center" py={8}>
+                      No saved sessions found
+                    </Text>
+                  )}
+                </CardBody>
+              </Card>
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
       </VStack>
     </Container>
   )

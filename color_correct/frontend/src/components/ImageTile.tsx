@@ -8,10 +8,19 @@ interface ImageTileProps {
   index: number
   sessionId: string
   clusterId: string
+  isFullscreen?: boolean
+  showOverall?: boolean
+  showIndividual?: boolean
 }
 
-function ImageTile({ image, index, sessionId, clusterId }: ImageTileProps) {
-  const { selectedImageId, setSelectedImage, clusters } = useSessionStore()
+function ImageTile({ image, index, sessionId, clusterId, isFullscreen = false, showOverall = true, showIndividual = true }: ImageTileProps) {
+  const { 
+    selectedImageId, 
+    setSelectedImage, 
+    clusters,
+    pendingOverallCorrection,
+    pendingIndividualCorrection
+  } = useSessionStore()
   const isSelected = selectedImageId === image.id
   
   const handleClick = () => {
@@ -20,15 +29,27 @@ function ImageTile({ image, index, sessionId, clusterId }: ImageTileProps) {
   
   // Get cluster to access correction params
   const cluster = clusters.find(c => c.id === clusterId)
-  // Use cluster correction params if available, otherwise undefined (will use defaults)
-  const correctionParams = cluster?.correction_params
   
-  // Create preview URL with cluster corrections
-  // The preview endpoint will use cluster corrections by default, but we can also pass them explicitly
-  const previewUrl = getPreviewUrl(sessionId, image.id, clusterId, 400, correctionParams)
+  // Use pending corrections for real-time preview if available, otherwise use saved corrections
+  const overallParams = pendingOverallCorrection[clusterId] || cluster?.correction_params
+  const individualParams = pendingIndividualCorrection[image.id] || undefined
   
-  // Use a key that changes when cluster corrections change to force image reload
-  const imageKey = `${image.id}-${clusterId}-${JSON.stringify(correctionParams)}`
+  // Create preview URL - use pending overall for cluster preview, individual for this image
+  const previewSize = isFullscreen ? 800 : 400
+  // For preview, use overall params (cluster-level) - individual will be applied by backend
+  const previewUrl = getPreviewUrl(
+    sessionId, 
+    image.id, 
+    clusterId, 
+    previewSize, 
+    overallParams,
+    individualParams,
+    showOverall,
+    showIndividual
+  )
+  
+  // Use a key that changes when corrections or visibility change to force image reload
+  const imageKey = `${image.id}-${clusterId}-${JSON.stringify(overallParams)}-${JSON.stringify(individualParams)}-${showOverall}-${showIndividual}`
   
   return (
     <Draggable draggableId={image.id} index={index}>
@@ -58,7 +79,7 @@ function ImageTile({ image, index, sessionId, clusterId }: ImageTileProps) {
             src={previewUrl}
             alt={`Image ${image.find_number}`}
             w="full"
-            h="180px"
+            h={isFullscreen ? "400px" : "180px"}
             objectFit="cover"
             fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3C/svg%3E"
           />

@@ -17,6 +17,7 @@ export interface SessionOptions {
   overwrite: boolean
   custom_k?: number
   sensitivity: number
+  preview_resolution?: number
 }
 
 export interface CreateSessionRequest {
@@ -192,31 +193,94 @@ export const getPreviewUrl = (
   imageId: string,
   clusterId?: string,
   maxSize: number = 600,
-  correctionParams?: CorrectionParams
+  overallParams?: CorrectionParams,
+  individualParams?: CorrectionParams,
+  showOverall: boolean = true,
+  showIndividual: boolean = true
 ): string => {
   const params = new URLSearchParams({
     image_id: imageId,
     max_size: maxSize.toString(),
+    show_overall: showOverall.toString(),
+    show_individual: showIndividual.toString(),
   })
   if (clusterId) {
     params.append('cluster_id', clusterId)
   }
-  // Add correction parameters for real-time preview
-  if (correctionParams) {
-    params.append('temperature', correctionParams.temperature.toString())
-    params.append('tint', correctionParams.tint.toString())
-    params.append('exposure', correctionParams.exposure.toString())
-    params.append('contrast', correctionParams.contrast.toString())
-    params.append('saturation', correctionParams.saturation.toString())
-    params.append('red_gain', correctionParams.red_gain.toString())
-    params.append('green_gain', correctionParams.green_gain.toString())
-    params.append('blue_gain', correctionParams.blue_gain.toString())
+  // Add overall correction parameters for real-time preview
+  if (overallParams) {
+    params.append('temperature', overallParams.temperature.toString())
+    params.append('tint', overallParams.tint.toString())
+    params.append('exposure', overallParams.exposure.toString())
+    params.append('contrast', overallParams.contrast.toString())
+    params.append('saturation', overallParams.saturation.toString())
+    params.append('red_gain', overallParams.red_gain.toString())
+    params.append('green_gain', overallParams.green_gain.toString())
+    params.append('blue_gain', overallParams.blue_gain.toString())
+  }
+  // Add individual correction parameters if provided
+  if (individualParams) {
+    // Use a prefix to distinguish individual params
+    params.append('individual_temperature', individualParams.temperature.toString())
+    params.append('individual_tint', individualParams.tint.toString())
+    params.append('individual_exposure', individualParams.exposure.toString())
+    params.append('individual_contrast', individualParams.contrast.toString())
+    params.append('individual_saturation', individualParams.saturation.toString())
+    params.append('individual_red_gain', individualParams.red_gain.toString())
+    params.append('individual_green_gain', individualParams.green_gain.toString())
+    params.append('individual_blue_gain', individualParams.blue_gain.toString())
   }
   return `${API_BASE_URL}/sessions/${sessionId}/preview?${params.toString()}`
 }
 
 export const startExport = async (sessionId: string): Promise<ExportResponse> => {
   const response = await apiClient.post(`/sessions/${sessionId}/export`)
+  return response.data
+}
+
+export interface SessionInfo {
+  session_id: string
+  saved_at: string
+  context_count: number
+  cluster_count: number
+  image_count: number
+  contexts: string[]
+}
+
+export interface ListSessionsResponse {
+  active_sessions: string[]
+  persisted_sessions: SessionInfo[]
+}
+
+export const listSessions = async (): Promise<ListSessionsResponse> => {
+  const response = await apiClient.get('/sessions')
+  return response.data
+}
+
+export const restoreSession = async (sessionId: string): Promise<{ session_id: string; message: string }> => {
+  const response = await apiClient.post(`/sessions/${sessionId}/restore`)
+  return response.data
+}
+
+export const deleteSession = async (sessionId: string): Promise<void> => {
+  await apiClient.delete(`/sessions/${sessionId}`)
+}
+
+export const setIndividualCorrection = async (
+  sessionId: string,
+  imageId: string,
+  params: CorrectionParams
+): Promise<void> => {
+  await apiClient.post(`/sessions/${sessionId}/images/${imageId}/set-individual-correction`, {
+    params
+  })
+}
+
+export const resetIndividualCorrections = async (
+  sessionId: string,
+  clusterId: string
+): Promise<{ message: string }> => {
+  const response = await apiClient.post(`/sessions/${sessionId}/clusters/${clusterId}/reset-individual`)
   return response.data
 }
 

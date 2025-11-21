@@ -15,10 +15,11 @@ import {
   Text,
   IconButton,
   useToast,
+  Select,
 } from '@chakra-ui/react'
 import { CloseIcon } from '@chakra-ui/icons'
 import { useMutation, useQueryClient } from 'react-query'
-import { CorrectionParams, setClusterCorrection, getPreviewUrl, autoCorrectCluster } from '../api/client'
+import { CorrectionParams, setClusterCorrection, getPreviewUrl, autoCorrectCluster, setIndividualCorrection } from '../api/client'
 import { useSessionStore } from '../state/session'
 
 interface CorrectionPanelProps {
@@ -41,37 +42,95 @@ const defaultParams: CorrectionParams = {
 function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps) {
   const toast = useToast()
   const queryClient = useQueryClient()
-  const { clusters, updateClusterCorrection, setSelectedImage } = useSessionStore()
+  const { 
+    clusters, 
+    updateClusterCorrection, 
+    setSelectedImage,
+    setPendingOverallCorrection,
+    setPendingIndividualCorrection,
+    clearPendingCorrections
+  } = useSessionStore()
   
   const cluster = clusters.find(c => c.id === clusterId)
-  const initialParams = cluster?.correction_params || defaultParams
+  const [layerMode, setLayerMode] = useState<'overall' | 'individual'>('overall')
   
-  const [params, setParams] = useState<CorrectionParams>(initialParams)
+  // Get initial params based on layer mode
+  const getInitialParams = async () => {
+    if (layerMode === 'overall') {
+      return cluster?.correction_params || defaultParams
+    } else {
+      // For individual, try to fetch existing individual correction from backend
+      // For now, start with defaults - individual corrections will be loaded from session
+      // when the panel opens (they're stored in session state)
+      return defaultParams
+    }
+  }
+  
+  const [params, setParams] = useState<CorrectionParams>(defaultParams)
+  const [isLoadingParams, setIsLoadingParams] = useState(true)
   
   useEffect(() => {
-    setParams(initialParams)
-  }, [clusterId])
+    // Load initial params when panel opens or mode changes
+    const loadParams = async () => {
+      setIsLoadingParams(true)
+      if (layerMode === 'overall') {
+        setParams(cluster?.correction_params || defaultParams)
+      } else {
+        // For individual mode, we need to fetch from backend
+        // But for now, start with defaults - the backend will use saved individual corrections
+        // when generating preview
+        setParams(defaultParams)
+      }
+      setIsLoadingParams(false)
+      // Clear pending corrections when switching modes or images
+      clearPendingCorrections()
+    }
+    loadParams()
+  }, [clusterId, layerMode, imageId, cluster])
+  
+  // Update pending corrections in real-time for preview
+  useEffect(() => {
+    if (layerMode === 'overall') {
+      setPendingOverallCorrection(clusterId, params)
+    } else {
+      setPendingIndividualCorrection(imageId, params)
+    }
+  }, [params, layerMode, clusterId, imageId])
   
   // Update preview URL whenever params change (real-time preview)
-  const previewUrl = getPreviewUrl(sessionId, imageId, clusterId, 600, params)
+  // Pass params as overall or individual based on layer mode
+  const previewUrl = layerMode === 'overall' 
+    ? getPreviewUrl(sessionId, imageId, clusterId, 600, params, undefined, true, true)
+    : getPreviewUrl(sessionId, imageId, clusterId, 600, undefined, params, true, true)
   
   const applyMutation = useMutation(
-    () => setClusterCorrection(sessionId, clusterId, params),
+    () => {
+      if (layerMode === 'overall') {
+        return setClusterCorrection(sessionId, clusterId, params)
+      } else {
+        return setIndividualCorrection(sessionId, imageId, params)
+      }
+    },
     {
       onSuccess: () => {
-        if (cluster) {
+        if (layerMode === 'overall' && cluster) {
           updateClusterCorrection(clusterId, {
             ...cluster,
             correction_params: params
           })
         }
         
-        // Invalidate queries to refresh all image previews in the cluster
+        // Clear pending corrections after successful apply
+        clearPendingCorrections()
+        
+        // Invalidate queries to refresh all image previews
         queryClient.invalidateQueries(['clusters', sessionId])
         
         toast({
-          title: 'Correction applied to cluster',
-          description: 'All images in the cluster have been updated',
+          title: layerMode === 'overall' ? 'Correction applied to cluster' : 'Individual correction applied',
+          description: layerMode === 'overall' 
+            ? 'All images in the cluster have been updated'
+            : 'Correction applied to this image',
           status: 'success',
           duration: 3000,
         })
@@ -123,6 +182,8 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
   }
   
   const handleClose = () => {
+    // Clear pending corrections when closing
+    clearPendingCorrections()
     setSelectedImage(null, null)
   }
   
@@ -151,6 +212,18 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
             onClick={handleClose}
           />
         </HStack>
+        
+        <FormControl>
+          <FormLabel fontSize="sm">Layer Mode</FormLabel>
+          <Select
+            value={layerMode}
+            onChange={(e) => setLayerMode(e.target.value as 'overall' | 'individual')}
+            size="sm"
+          >
+            <option value="overall">Overall (Cluster)</option>
+            <option value="individual">Individual (Image)</option>
+          </Select>
+        </FormControl>
         
         <VStack align="stretch" spacing={4}>
           <FormControl>
@@ -312,7 +385,7 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
           onClick={() => applyMutation.mutate()}
           isLoading={applyMutation.isLoading}
         >
-          Apply to Cluster
+          {layerMode === 'overall' ? 'Apply to Cluster' : 'Apply to Image'}
         </Button>
         
         <Box>
