@@ -6,6 +6,7 @@ import logging
 
 from app.services.models import CreateSessionRequest, CreateSessionResponse, JobStatusResponse
 from app.services.session_store import get_session_store
+from app.services.session_persistence import list_sessions as list_persisted_sessions
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,18 +50,66 @@ async def get_session_status(session_id: str, job_id: str = None):
 
 @router.delete("/{session_id}")
 async def delete_session(session_id: str):
-    """Delete a session."""
+    """Delete a session from memory and disk.
+    
+    Returns success even if session doesn't exist (idempotent operation).
+    """
     store = get_session_store()
-    if not store.delete_session(session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Try to delete from memory (may not exist)
+    store.delete_session(session_id)
+    
+    # Also try to delete from disk (may not exist)
+    from app.services.session_persistence import delete_session as delete_persisted_session
+    delete_persisted_session(session_id)
+    
+    # Always return success (idempotent - deleting non-existent session is OK)
     return {"message": "Session deleted"}
 
 
 @router.get("")
 async def list_sessions():
-    """List all active sessions."""
+    """List all active sessions.
+    
+    Validates that persisted sessions actually exist on disk.
+    """
     store = get_session_store()
-    return {"sessions": store.list_sessions()}
+    active_sessions = store.list_sessions()
+    
+    # Get persisted sessions and validate they exist
+    persisted_sessions = list_persisted_sessions()
+    
+    # Validate active sessions - remove any that don't exist on disk
+    validated_active = []
+    for session_id in active_sessions:
+        session = store.get_session(session_id)
+        if session:
+            # Check if session file exists
+            from app.services.session_persistence import load_session
+            if load_session(session_id):
+                validated_active.append(session_id)
+            else:
+                # Session file doesn't exist, remove from memory
+                store.delete_session(session_id)
+    
+    # Validate persisted sessions - only return those that actually exist
+    validated_persisted = []
+    for session_info in persisted_sessions:
+        session_id = session_info.get("session_id")
+        if session_id:
+            from app.services.session_persistence import load_session
+            if load_session(session_id):
+                validated_persisted.append(session_info)
+            else:
+                # Session file doesn't exist, try to delete it
+                from app.services.session_persistence import delete_session
+                delete_session(session_id)
+                logger.info(f"Removed invalid session from list: {session_id}")
+    
+    return {
+        "active_sessions": validated_active,
+        "persisted_sessions": validated_persisted
+    }
 
 
 @router.get("/{session_id}")
@@ -68,6 +117,10 @@ async def get_session_info(session_id: str):
     """Get session information including options."""
     store = get_session_store()
     session = store.get_session(session_id)
+    
+    # Try to restore from disk if not in memory
+    if not session:
+        session = store.restore_session(session_id)
     
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -80,6 +133,21 @@ async def get_session_info(session_id: str):
             "overwrite": session.options.overwrite,
             "custom_k": session.options.custom_k,
             "sensitivity": session.options.sensitivity,
+            "preview_resolution": session.options.preview_resolution,
         }
+    }
+
+@router.post("/{session_id}/restore")
+async def restore_session(session_id: str):
+    """Restore a session from disk."""
+    store = get_session_store()
+    session = store.restore_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found on disk")
+    
+    return {
+        "session_id": session.session_id,
+        "message": "Session restored"
     }
 

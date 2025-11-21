@@ -6,6 +6,7 @@ import logging
 from app.services.session_store import get_session_store
 from app.services.exporter import export_session_images
 from app.services.models import ExportResponse, JobStatus, CorrectionParams
+from app.services.ascota_storage import build_corrections_data, save_color_correct_json
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,6 +57,7 @@ def _run_export_job(session_id: str, job_id: str):
             clusters_with_params,
             session.options.image_source.value,
             session.options.overwrite,
+            session,  # Pass session for individual corrections
             progress_callback=update_progress
         )
         
@@ -63,6 +65,23 @@ def _run_export_job(session_id: str, job_id: str):
         job.progress = 1.0
         job.message = f"Export complete: {summary.total_files_written} files written"
         job.result = summary.dict()
+        
+        # Save corrections to .ascota folders (one per find)
+        try:
+            corrections_data_by_find = build_corrections_data(
+                session.images,
+                session.clusters,
+                session
+            )
+            
+            # Save to each find directory
+            for find_path, corrections_data in corrections_data_by_find.items():
+                save_color_correct_json(find_path, corrections_data)
+            
+            logger.info(f"Saved corrections to .ascota folders for {len(corrections_data_by_find)} finds")
+        except Exception as e:
+            logger.error(f"Failed to save corrections to .ascota folders: {e}", exc_info=True)
+            # Don't fail the export if saving corrections fails
         
         logger.info(f"Export job {job_id} completed: {summary.total_files_written} files written")
         

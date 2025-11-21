@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from typing import Dict, Optional
+from datetime import datetime
 import logging
 import asyncio
 
@@ -50,16 +51,21 @@ def _run_clustering_job(session_id: str, job_id: str, new_sensitivity: float = N
         job.progress = 0.4
         job.message = f"Found {len(images)} images, clustering..."
         
-        # Run clustering
+        # Run clustering with preview resolution
+        preview_resolution = session.options.preview_resolution if hasattr(session.options, 'preview_resolution') else 1500
         clusters = cluster_images(
             images,
             k=session.options.custom_k,
-            sensitivity=session.options.sensitivity
+            sensitivity=session.options.sensitivity,
+            preview_resolution=preview_resolution
         )
         
         # Update session
         session.images = images
         session.clusters = clusters
+        
+        # Persist session
+        store.mark_session_updated(session_id)
         
         job.status = JobStatus.COMPLETED
         job.progress = 1.0
@@ -122,6 +128,9 @@ async def undo_clusters(session_id: str):
     if not success:
         raise HTTPException(status_code=400, detail="No previous cluster state to undo")
     
+    # Persist session
+    store.mark_session_updated(session_id)
+    
     return {"message": "Clusters restored"}
 
 
@@ -167,6 +176,9 @@ async def create_cluster(
     # Create new cluster
     cluster = session.create_cluster(image_id)
     
+    # Persist session
+    store.mark_session_updated(session_id)
+    
     return {"cluster_id": cluster.id, "message": "Cluster created"}
 
 
@@ -194,6 +206,9 @@ async def delete_cluster(session_id: str, cluster_id: str):
     
     if not success:
         raise HTTPException(status_code=404, detail="Cluster not found")
+    
+    # Persist session
+    store.mark_session_updated(session_id)
     
     return {"message": "Cluster deleted"}
 
@@ -230,6 +245,9 @@ async def move_image(session_id: str, request: MoveImageRequest):
     if not success:
         raise HTTPException(status_code=400, detail="Failed to move image")
     
+    # Persist session
+    store.mark_session_updated(session_id)
+    
     return {"message": "Image moved successfully"}
 
 
@@ -250,6 +268,9 @@ async def set_cluster_correction(
     
     if not success:
         raise HTTPException(status_code=404, detail="Cluster not found")
+    
+    # Persist session
+    store.mark_session_updated(session_id)
     
     return {"message": "Correction parameters set"}
 
@@ -316,5 +337,62 @@ async def reset_cluster_correction(session_id: str, cluster_id: str):
     default_params = CorrectionParams()
     session.set_correction(cluster_id, default_params)
     
+    # Persist session
+    store.mark_session_updated(session_id)
+    
     return {"message": "Correction reset to defaults", "params": default_params.dict()}
+
+
+@router.post("/{session_id}/images/{image_id}/set-individual-correction")
+async def set_individual_correction(
+    session_id: str,
+    image_id: str,
+    request: SetCorrectionRequest
+):
+    """Set individual correction parameters for an image."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    image = session.get_image(image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    success = session.set_individual_correction(image_id, request.params)
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to set individual correction")
+    
+    # Persist session
+    store.mark_session_updated(session_id)
+    
+    return {"message": "Individual correction parameters set"}
+
+
+@router.post("/{session_id}/clusters/{cluster_id}/reset-individual")
+async def reset_individual_corrections(session_id: str, cluster_id: str):
+    """Reset individual correction parameters for all images in a cluster."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    cluster = session.get_cluster(cluster_id)
+    if not cluster:
+        raise HTTPException(status_code=404, detail="Cluster not found")
+    
+    # Remove individual corrections for all images in cluster
+    if hasattr(session, '_individual_corrections'):
+        for image_id in cluster.image_ids:
+            if image_id in session._individual_corrections:
+                del session._individual_corrections[image_id]
+        session.updated_at = datetime.now()
+    
+    # Persist session
+    store.mark_session_updated(session_id)
+    
+    return {"message": "Individual corrections reset for cluster"}
 

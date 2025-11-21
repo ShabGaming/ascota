@@ -44,7 +44,7 @@ def get_output_paths(
     image: ImageItem,
     overwrite: bool
 ) -> Dict[int, Tuple[str, str]]:
-    """Generate output paths for different sizes.
+    """Generate output paths for different sizes (always JPG).
     
     Args:
         image: ImageItem with path information
@@ -52,53 +52,38 @@ def get_output_paths(
         
     Returns:
         Dict mapping size (450/1500/3000) to (input_path, output_path) tuples
+        Output paths are always .jpg
     """
     paths = {}
     
-    # Determine base directory and filename
-    # Use proxy_3000 path as reference if available
-    ref_path = image.proxy_3000 or image.proxy_1500 or image.proxy_450
-    
-    if not ref_path:
-        logger.warning(f"No reference path for image {image.id}")
+    # Use RAW file path as reference to determine base directory and name
+    if not image.raw_path:
+        logger.warning(f"No RAW path for image {image.id}")
         return paths
     
-    ref_path_obj = Path(ref_path)
-    base_dir = ref_path_obj.parent
+    raw_path_obj = Path(image.raw_path)
+    base_dir = raw_path_obj.parent
+    base_name = raw_path_obj.stem
     
-    # Extract base name (remove size suffixes)
-    stem = ref_path_obj.stem
-    if stem.endswith('-3000'):
-        base_name = stem[:-5]
-    elif stem.endswith('-1500'):
-        base_name = stem[:-5]
-    else:
-        base_name = stem
+    # Always use .jpg extension for exports
+    ext = '.jpg'
     
-    # Determine extension (prefer original, default to .jpg)
-    ext = ref_path_obj.suffix if ref_path_obj.suffix else '.jpg'
-    
-    # Generate paths for each size
+    # Generate paths for each size (always JPG)
     sizes_config = [
-        (450, image.proxy_450, base_name),
-        (1500, image.proxy_1500, f"{base_name}-1500"),
-        (3000, image.proxy_3000, f"{base_name}-3000")
+        (450, base_name),
+        (1500, f"{base_name}-1500"),
+        (3000, f"{base_name}-3000")
     ]
     
-    for size, input_path, output_stem in sizes_config:
+    for size, output_stem in sizes_config:
         if overwrite:
             output_name = f"{output_stem}{ext}"
         else:
             output_name = f"{output_stem}-color_correct{ext}"
         
         output_path = str(base_dir / output_name)
-        
-        # For input, use available proxy
-        if input_path and os.path.exists(input_path):
-            paths[size] = (input_path, output_path)
-        else:
-            # Use primary path as fallback
-            paths[size] = (image.primary_path, output_path)
+        # Input path is not used for RAW export, but we need to provide it
+        paths[size] = (image.raw_path, output_path)
     
     return paths
 
@@ -179,14 +164,16 @@ def export_image_jpeg(
 
 def export_image_raw(
     image: ImageItem,
-    correction_params: CorrectionParams,
+    overall_params: CorrectionParams,
+    individual_params: Optional[CorrectionParams],
     overwrite: bool
 ) -> Tuple[int, List[str]]:
     """Export corrected image in RAW mode (process RAW file).
     
     Args:
         image: ImageItem with RAW path
-        correction_params: Correction parameters to apply
+        overall_params: Overall (cluster) correction parameters
+        individual_params: Optional individual (image) correction parameters
         overwrite: Whether to overwrite existing files
         
     Returns:
@@ -203,58 +190,50 @@ def export_image_raw(
         return files_written, [error_msg]
     
     if not image.raw_path or not os.path.exists(image.raw_path):
-        # Fall back to JPEG mode
-        logger.warning(f"No RAW file for {image.id}, falling back to JPEG mode")
-        return export_image_jpeg(image, correction_params, overwrite)
+        error_msg = f"No RAW file for {image.id}"
+        logger.error(error_msg)
+        return files_written, [error_msg]
     
     try:
-        # Load RAW file
+        # Load RAW file and process to base image (same as preview)
         logger.info(f"Loading RAW file: {image.raw_path}")
         with rawpy.imread(image.raw_path) as raw:
-            # Apply white balance from correction params
-            # rawpy expects gains for RGBG channels
-            rgb_gains = [
-                correction_params.red_gain,
-                correction_params.green_gain,
-                correction_params.blue_gain
-            ]
-            
-            # Process RAW with custom WB
+            # Process RAW with same settings as preview for consistency
             rgb = raw.postprocess(
-                use_camera_wb=False,
-                user_wb=rgb_gains,
+                use_camera_wb=False,  # Use auto WB
                 output_bps=16,
-                no_auto_bright=True,
-                exp_shift=correction_params.exposure
+                no_auto_bright=False,  # Allow auto brightness adjustment
+                bright=1.0             # Brightness multiplier (1.0 = normal)
             )
         
         # Convert to float
         img_float = rgb.astype(np.float32) / 65535.0
         
-        # Apply remaining corrections (temp/tint, contrast, saturation)
-        # Note: exposure and RGB gains already applied in RAW processing
-        temp_params = CorrectionParams(
-            temperature=correction_params.temperature,
-            tint=correction_params.tint,
-            contrast=correction_params.contrast,
-            saturation=correction_params.saturation
-        )
+        # Apply overall corrections first
+        corrected = apply_correction_params(img_float, overall_params)
         
-        corrected = apply_correction_params(img_float, temp_params)
+        # Apply individual corrections on top if they exist
+        if individual_params:
+            corrected = apply_correction_params(corrected, individual_params)
         
-        # Get output paths
+        # Get output paths - always export as JPG
         output_config = get_output_paths(image, overwrite)
         
-        # Export at each size
+        # Export at each size (3000px, 1500px, 450px) as JPG
         for size, (_, output_path) in output_config.items():
             try:
+                # Ensure output path is .jpg
+                output_path_obj = Path(output_path)
+                if output_path_obj.suffix.lower() not in ['.jpg', '.jpeg']:
+                    output_path = str(output_path_obj.with_suffix('.jpg'))
+                
                 sized = resize_to_width(corrected, size)
                 save_image_from_float(sized, output_path, quality=95)
                 files_written += 1
-                logger.info(f"Exported RAW {size}px -> {output_path}")
+                logger.info(f"Exported {size}px JPG -> {output_path}")
                 
             except Exception as e:
-                error_msg = f"Failed to export RAW {size}px: {e}"
+                error_msg = f"Failed to export {size}px JPG: {e}"
                 logger.error(error_msg)
                 errors.append(error_msg)
         
@@ -271,6 +250,7 @@ def export_session_images(
     clusters_with_params: List[Tuple[List[str], CorrectionParams]],
     image_source: str,
     overwrite: bool,
+    session,  # Session object to access individual corrections
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> ExportSummary:
     """Export all images with their cluster corrections.
@@ -312,11 +292,16 @@ def export_session_images(
             if progress_callback:
                 progress_callback(current_image, total_images, f"Exporting image {current_image}/{total_images}")
             
-            # Export
-            if image_source == "raw_mode":
-                files_written, errors = export_image_raw(image, correction_params, overwrite)
-            else:
-                files_written, errors = export_image_jpeg(image, correction_params, overwrite)
+            # Always use RAW mode - get individual corrections if they exist
+            individual_params = session.get_individual_correction(image_id) if session else None
+            
+            # Export from RAW
+            files_written, errors = export_image_raw(
+                image,
+                correction_params,  # overall params
+                individual_params,  # individual params
+                overwrite
+            )
             
             total_files_written += files_written
             

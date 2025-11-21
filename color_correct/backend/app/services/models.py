@@ -27,6 +27,7 @@ class SessionOptions(BaseModel):
     overwrite: bool = Field(False, description="Overwrite existing files if True")
     custom_k: Optional[int] = Field(None, description="Number of clusters (auto-detect if None)")
     sensitivity: float = Field(1.0, description="Clustering sensitivity")
+    preview_resolution: int = Field(1500, description="Preview resolution width in pixels (450, 1500, or 3000)")
 
 
 class CreateSessionRequest(BaseModel):

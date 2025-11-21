@@ -62,15 +62,15 @@ def _find_image_variants(photo_dir: Path, base_name: str, extensions: List[str])
     return variants
 
 
-def scan_context_directory(context_path: str, image_source: str = "3000px") -> List[ImageItem]:
+def scan_context_directory(context_path: str, image_source: str = "raw_mode") -> List[ImageItem]:
     """Scan a context directory and discover all images.
     
     Args:
         context_path: Path to context directory (e.g., D:/ararat/data/files/N/38/478020/4419550/1)
-        image_source: Image source mode: "450px", "1500px", "3000px", or "raw_mode"
+        image_source: Image source mode (always "raw_mode" now, parameter kept for compatibility)
         
     Returns:
-        List of ImageItem objects
+        List of ImageItem objects (only images with RAW files)
     """
     images: List[ImageItem] = []
     context_path = Path(context_path)
@@ -123,41 +123,13 @@ def scan_context_directory(context_path: str, image_source: str = "3000px") -> L
             extensions = ['.jpg', '.jpeg', '.JPG', '.JPEG', '.png', '.PNG']
             variants = _find_image_variants(photos_dir, base_name, extensions)
             
-            # Determine primary path for clustering based on image_source with fallback
-            if image_source == "raw_mode":
-                # Raw mode: RAW → 3000px → 1500px → 450px
-                primary_path = (
-                    variants['raw_path'] or
-                    variants['proxy_3000'] or
-                    variants['proxy_1500'] or
-                    variants['proxy_450']
-                )
-            elif image_source == "3000px":
-                # 3000px: 3000px → 1500px → 450px
-                primary_path = (
-                    variants['proxy_3000'] or
-                    variants['proxy_1500'] or
-                    variants['proxy_450']
-                )
-            elif image_source == "1500px":
-                # 1500px: 1500px → 450px
-                primary_path = (
-                    variants['proxy_1500'] or
-                    variants['proxy_450']
-                )
-            elif image_source == "450px":
-                # 450px: 450px only
-                primary_path = variants['proxy_450']
-            else:
-                # Default to 3000px fallback chain
-                primary_path = (
-                    variants['proxy_3000'] or
-                    variants['proxy_1500'] or
-                    variants['proxy_450']
-                )
-            
-            if not primary_path:
+            # Always require RAW files - skip images without RAW
+            if not variants['raw_path']:
+                logger.debug(f"Skipping image {base_name} in find {find_number} - no RAW file found")
                 continue
+            
+            # Use RAW as primary path
+            primary_path = variants['raw_path']
             
             # Create ImageItem
             image_id = _get_file_hash(primary_path)
@@ -180,15 +152,15 @@ def scan_context_directory(context_path: str, image_source: str = "3000px") -> L
     return images
 
 
-def scan_all_contexts(context_paths: List[str], image_source: str = "3000px") -> Dict[str, ImageItem]:
+def scan_all_contexts(context_paths: List[str], image_source: str = "raw_mode") -> Dict[str, ImageItem]:
     """Scan all context directories and return a unified image dictionary.
     
     Args:
         context_paths: List of context directory paths
-        image_source: Image source mode: "450px", "1500px", "3000px", or "raw_mode"
+        image_source: Image source mode (always "raw_mode" now, parameter kept for compatibility)
         
     Returns:
-        Dict mapping image_id to ImageItem
+        Dict mapping image_id to ImageItem (only images with RAW files)
     """
     all_images: Dict[str, ImageItem] = {}
     
