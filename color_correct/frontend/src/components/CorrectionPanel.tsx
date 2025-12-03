@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Box,
   VStack,
@@ -39,6 +39,112 @@ const defaultParams: CorrectionParams = {
   blue_gain: 1.0,
 }
 
+// Preset color correction templates
+const colorPresets: Record<string, CorrectionParams> = {
+  'neutral': {
+    temperature: 0,
+    tint: 0,
+    exposure: 0,
+    contrast: 1.0,
+    saturation: 1.0,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+  'warm': {
+    temperature: 30,
+    tint: 5,
+    exposure: 0,
+    contrast: 1.1,
+    saturation: 1.1,
+    red_gain: 1.05,
+    green_gain: 1.0,
+    blue_gain: 0.95,
+  },
+  'cool': {
+    temperature: -30,
+    tint: -5,
+    exposure: 0,
+    contrast: 1.1,
+    saturation: 1.0,
+    red_gain: 0.95,
+    green_gain: 1.0,
+    blue_gain: 1.05,
+  },
+  'high_contrast': {
+    temperature: 0,
+    tint: 0,
+    exposure: 0,
+    contrast: 1.3,
+    saturation: 1.1,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+  'vibrant': {
+    temperature: 10,
+    tint: 0,
+    exposure: 0.2,
+    contrast: 1.2,
+    saturation: 1.4,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+  'vintage': {
+    temperature: 20,
+    tint: 10,
+    exposure: 0.1,
+    contrast: 1.15,
+    saturation: 0.85,
+    red_gain: 1.1,
+    green_gain: 1.0,
+    blue_gain: 0.9,
+  },
+  'dramatic': {
+    temperature: 0,
+    tint: 0,
+    exposure: -0.2,
+    contrast: 1.4,
+    saturation: 1.2,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+  'soft': {
+    temperature: 5,
+    tint: 0,
+    exposure: 0.1,
+    contrast: 0.9,
+    saturation: 0.9,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+  'desaturated': {
+    temperature: 0,
+    tint: 0,
+    exposure: 0,
+    contrast: 1.1,
+    saturation: 0.5,
+    red_gain: 1.0,
+    green_gain: 1.0,
+    blue_gain: 1.0,
+  },
+}
+
+const presetLabels: Record<string, string> = {
+  'neutral': 'Neutral',
+  'warm': 'Warm',
+  'cool': 'Cool',
+  'high_contrast': 'High Contrast',
+  'vibrant': 'Vibrant',
+  'vintage': 'Vintage',
+  'dramatic': 'Dramatic',
+  'soft': 'Soft',
+  'desaturated': 'Desaturated',
+}
+
 function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps) {
   const toast = useToast()
   const queryClient = useQueryClient()
@@ -53,6 +159,28 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
   
   const cluster = clusters.find(c => c.id === clusterId)
   const [layerMode, setLayerMode] = useState<'overall' | 'individual'>('overall')
+  const [selectedPreset, setSelectedPreset] = useState<string>('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isWide, setIsWide] = useState(false)
+  
+  // Detect container width to determine layout
+  useEffect(() => {
+    if (!containerRef.current) return
+    
+    const updateLayout = () => {
+      const width = containerRef.current?.offsetWidth || 0
+      // Use horizontal layout (preview left, params right) when width >= 700px
+      setIsWide(width >= 700)
+    }
+    
+    updateLayout()
+    const resizeObserver = new ResizeObserver(updateLayout)
+    resizeObserver.observe(containerRef.current)
+    
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [])
   
   // Get initial params based on layer mode
   const getInitialParams = async () => {
@@ -123,8 +251,8 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
         // Clear pending corrections after successful apply
         clearPendingCorrections()
         
-        // Invalidate queries to refresh all image previews
-        queryClient.invalidateQueries(['clusters', sessionId])
+        // Don't invalidate queries - the state update is already handled by updateClusterCorrection
+        // Images will update automatically through the store state
         
         toast({
           title: layerMode === 'overall' ? 'Correction applied to cluster' : 'Individual correction applied',
@@ -179,6 +307,14 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
   
   const handleReset = () => {
     setParams(defaultParams)
+    setSelectedPreset('')
+  }
+  
+  const handlePresetChange = (presetKey: string) => {
+    setSelectedPreset(presetKey)
+    if (presetKey && presetKey !== '' && colorPresets[presetKey]) {
+      setParams(colorPresets[presetKey])
+    }
   }
   
   const handleClose = () => {
@@ -187,45 +323,41 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
     setSelectedImage(null, null)
   }
   
-  return (
-    <Box
-      position="fixed"
-      right={0}
-      top="80px"
-      bottom="60px"
-      w="400px"
-      bg="white"
-      boxShadow="xl"
-      borderLeft="1px"
-      borderColor="gray.200"
-      overflowY="auto"
-      zIndex={20}
-    >
-      <VStack align="stretch" spacing={4} p={6}>
-        <HStack justify="space-between">
-          <Heading size="md">Correction Panel</Heading>
-          <IconButton
-            aria-label="Close panel"
-            icon={<CloseIcon />}
-            size="sm"
-            variant="ghost"
-            onClick={handleClose}
-          />
-        </HStack>
-        
-        <FormControl>
-          <FormLabel fontSize="sm">Layer Mode</FormLabel>
-          <Select
-            value={layerMode}
-            onChange={(e) => setLayerMode(e.target.value as 'overall' | 'individual')}
-            size="sm"
-          >
-            <option value="overall">Overall (Cluster)</option>
-            <option value="individual">Individual (Image)</option>
-          </Select>
-        </FormControl>
-        
-        <VStack align="stretch" spacing={4}>
+  // Render parameters section
+  const renderParameters = () => (
+    <>
+      <FormControl>
+        <FormLabel fontSize="sm">Layer Mode</FormLabel>
+        <Select
+          value={layerMode}
+          onChange={(e) => setLayerMode(e.target.value as 'overall' | 'individual')}
+          size="sm"
+        >
+          <option value="overall">Overall (Cluster)</option>
+          <option value="individual">Individual (Image)</option>
+        </Select>
+      </FormControl>
+      
+      <FormControl>
+        <FormLabel fontSize="sm">Color Presets</FormLabel>
+        <Select
+          value={selectedPreset}
+          onChange={(e) => handlePresetChange(e.target.value)}
+          size="sm"
+          placeholder="Select a preset..."
+        >
+          {Object.entries(presetLabels).map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </Select>
+      </FormControl>
+      
+      {/* Two-column layout for parameters */}
+      <HStack align="start" spacing={4}>
+        {/* Left column: Basic parameters */}
+        <VStack align="stretch" spacing={4} flex={1}>
           <FormControl>
             <FormLabel fontSize="sm">Temperature: {params.temperature.toFixed(0)}</FormLabel>
             <Slider
@@ -310,8 +442,11 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
               <SliderThumb />
             </Slider>
           </FormControl>
-          
-          <Text fontSize="sm" fontWeight="bold" mt={2}>RGB Gains</Text>
+        </VStack>
+        
+        {/* Right column: RGB Gains */}
+        <VStack align="stretch" spacing={4} flex={1}>
+          <Text fontSize="sm" fontWeight="bold" mt={0}>RGB Gains</Text>
           
           <FormControl>
             <FormLabel fontSize="sm">Red: {params.red_gain.toFixed(2)}</FormLabel>
@@ -364,41 +499,100 @@ function CorrectionPanel({ sessionId, clusterId, imageId }: CorrectionPanelProps
             </Slider>
           </FormControl>
         </VStack>
-        
-        <HStack spacing={2}>
-          <Button
-            flex={1}
-            colorScheme="brand"
-            variant="outline"
-            onClick={() => whiteBalanceMutation.mutate()}
-            isLoading={whiteBalanceMutation.isLoading}
-          >
-            White Balance
-          </Button>
-          <Button flex={1} variant="outline" onClick={handleReset}>
-            Reset
-          </Button>
-        </HStack>
-        
+      </HStack>
+      
+      <HStack spacing={2}>
         <Button
+          flex={1}
           colorScheme="brand"
-          onClick={() => applyMutation.mutate()}
-          isLoading={applyMutation.isLoading}
+          variant="outline"
+          onClick={() => whiteBalanceMutation.mutate()}
+          isLoading={whiteBalanceMutation.isLoading}
         >
-          {layerMode === 'overall' ? 'Apply to Cluster' : 'Apply to Image'}
+          White Balance
         </Button>
-        
-        <Box>
-          <Image
-            key={previewUrl}
-            src={previewUrl}
-            alt="Preview"
-            w="full"
-            borderRadius="md"
-            boxShadow="md"
-          />
-        </Box>
-      </VStack>
+        <Button flex={1} variant="outline" onClick={handleReset}>
+          Reset
+        </Button>
+      </HStack>
+      
+      <Button
+        colorScheme="brand"
+        onClick={() => applyMutation.mutate()}
+        isLoading={applyMutation.isLoading}
+      >
+        {layerMode === 'overall' ? 'Apply to Cluster' : 'Apply to Image'}
+      </Button>
+    </>
+  )
+  
+  // Render preview image
+  const renderPreview = () => (
+    <Box flexShrink={0}>
+      <Image
+        key={previewUrl}
+        src={previewUrl}
+        alt="Preview"
+        w="full"
+        borderRadius="md"
+        boxShadow="md"
+      />
+    </Box>
+  )
+
+  return (
+    <Box
+      ref={containerRef}
+      w="full"
+      h="full"
+      bg="white"
+      display="flex"
+      flexDirection="column"
+    >
+      {isWide ? (
+        // Wide layout: Preview on left, parameters on right
+        <HStack align="start" spacing={4} h="full" p={6} overflow="hidden">
+          {/* Left: Preview */}
+          <Box flex="0 0 45%" overflowY="auto" h="full">
+            <VStack align="stretch" spacing={4}>
+              <HStack justify="space-between">
+                <Heading size="md">Correction Panel</Heading>
+                <IconButton
+                  aria-label="Close panel"
+                  icon={<CloseIcon />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleClose}
+                />
+              </HStack>
+              {renderPreview()}
+            </VStack>
+          </Box>
+          
+          {/* Right: Parameters */}
+          <Box flex="1" overflowY="auto" h="full">
+            <VStack align="stretch" spacing={4}>
+              {renderParameters()}
+            </VStack>
+          </Box>
+        </HStack>
+      ) : (
+        // Narrow layout: Parameters on top, preview below (current layout)
+        <VStack align="stretch" spacing={4} p={6} flex={1} overflowY="auto">
+          <HStack justify="space-between">
+            <Heading size="md">Correction Panel</Heading>
+            <IconButton
+              aria-label="Close panel"
+              icon={<CloseIcon />}
+              size="sm"
+              variant="ghost"
+              onClick={handleClose}
+            />
+          </HStack>
+          {renderParameters()}
+          {renderPreview()}
+        </VStack>
+      )}
     </Box>
   )
 }

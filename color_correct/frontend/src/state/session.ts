@@ -66,12 +66,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   
   setSelectedImage: (imageId: string | null, clusterId: string | null) => {
-    // Clear pending corrections when selecting a different image or closing
+    const state = get()
+    // Only clear pending corrections when switching to a different image or closing
+    // Don't clear if selecting the same image (prevents unnecessary re-renders)
+    const isSwitchingImage = state.selectedImageId !== imageId
+    const isClosing = imageId === null
+    
     set({ 
       selectedImageId: imageId, 
       selectedClusterId: clusterId,
-      pendingOverallCorrection: {},
-      pendingIndividualCorrection: {}
+      // Only clear pending corrections when actually switching images or closing
+      ...(isSwitchingImage || isClosing ? {
+        pendingOverallCorrection: {},
+        pendingIndividualCorrection: {}
+      } : {})
     })
   },
   

@@ -1,3 +1,4 @@
+import { useMemo, memo, useState, useEffect, useRef } from 'react'
 import {
   Box,
   VStack,
@@ -25,7 +26,7 @@ interface ClusterColumnProps {
   onToggleFullscreen?: () => void
 }
 
-function ClusterColumn({ 
+const ClusterColumn = memo(function ClusterColumn({ 
   cluster, 
   images, 
   sessionId, 
@@ -50,8 +51,8 @@ function ClusterColumn({
         }
         updateClusterCorrection(cluster.id, updatedCluster)
         
-        // Invalidate queries to refresh all image previews
-        queryClient.invalidateQueries(['clusters', sessionId])
+        // Don't invalidate queries - state update is sufficient
+        // Images will update automatically through the store state
         
         toast({
           title: 'Correction reset',
@@ -74,7 +75,7 @@ function ClusterColumn({
     () => deleteCluster(sessionId, cluster.id),
     {
       onSuccess: () => {
-        // Invalidate queries to refresh cluster list
+        // Invalidate queries to refresh cluster list (cluster deletion requires refetch)
         queryClient.invalidateQueries(['clusters', sessionId])
         
         toast({
@@ -98,7 +99,8 @@ function ClusterColumn({
     () => resetIndividualCorrections(sessionId, cluster.id),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['clusters', sessionId])
+        // Don't invalidate queries - individual corrections are stored per-image
+        // Images will update automatically when their individual corrections change
         toast({
           title: 'Individual corrections reset',
           status: 'success',
@@ -119,20 +121,76 @@ function ClusterColumn({
   const isEmpty = cluster.image_ids.length === 0
   const hasOverallCorrection = cluster.correction_params !== null && cluster.correction_params !== undefined
   
+  // Memoize image list to prevent unnecessary re-renders
+  const imageList = useMemo(() => {
+    return cluster.image_ids
+      .map((imageId) => images[imageId])
+      .filter((image): image is ImageItem => image !== undefined)
+  }, [cluster.image_ids, images])
+  
+  // Calculate responsive columns based on container width
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [columns, setColumns] = useState(3)
+  
+  useEffect(() => {
+    if (!isFullscreen) return
+    
+    let resizeObserver: ResizeObserver | null = null
+    
+    const updateColumns = () => {
+      const element = containerRef.current
+      if (!element) return
+      const width = element.offsetWidth
+      // Each image tile is approximately 200px wide (with spacing)
+      // Adjust columns based on available width
+      if (width < 300) {
+        setColumns(1)
+      } else if (width < 500) {
+        setColumns(2)
+      } else if (width < 700) {
+        setColumns(3)
+      } else if (width < 900) {
+        setColumns(4)
+      } else {
+        setColumns(5)
+      }
+    }
+    
+    // Wait for ref to be set, then set up observer
+    const timer = setTimeout(() => {
+      const element = containerRef.current
+      if (element) {
+        updateColumns()
+        resizeObserver = new ResizeObserver(updateColumns)
+        resizeObserver.observe(element)
+      }
+    }, 0)
+    
+    return () => {
+      clearTimeout(timer)
+      if (resizeObserver) {
+        resizeObserver.disconnect()
+      }
+    }
+  }, [isFullscreen, imageList.length])
+  
   return (
     <Box
-      minW={isFullscreen ? "1200px" : "300px"}
+      minW={isFullscreen ? "300px" : "300px"}
       maxW={isFullscreen ? "100%" : "300px"}
       w={isFullscreen ? "100%" : undefined}
+      h={isFullscreen ? "100%" : undefined}
       bg="white"
       borderRadius="lg"
       boxShadow="md"
       p={4}
       flexShrink={0}
       flex={isFullscreen ? 1 : undefined}
+      display={isFullscreen ? "flex" : undefined}
+      flexDirection={isFullscreen ? "column" : undefined}
     >
-      <VStack align="stretch" spacing={3}>
-        <HStack justify="space-between" align="start">
+      <VStack align="stretch" spacing={3} flex={isFullscreen ? 1 : undefined} minH={0}>
+        <HStack justify="space-between" align="start" flexShrink={0}>
           <Box>
             <Heading size="sm" mb={1}>
               Cluster {cluster.id.slice(0, 8)}
@@ -164,7 +222,7 @@ function ClusterColumn({
         </HStack>
         
         {/* Reset Buttons */}
-        <HStack spacing={2}>
+        <HStack spacing={2} flexShrink={0}>
           <Button
             leftIcon={<RepeatIcon />}
             size="sm"
@@ -191,10 +249,14 @@ function ClusterColumn({
         <Droppable droppableId={cluster.id}>
           {(provided, snapshot) => (
             <Box
-              ref={provided.innerRef}
+              ref={(node) => {
+                provided.innerRef(node)
+                containerRef.current = node
+              }}
               {...provided.droppableProps}
-              minH="400px"
-              maxH="calc(100vh - 350px)"
+              minH={isFullscreen ? "200px" : "400px"}
+              maxH={isFullscreen ? "none" : "calc(100vh - 350px)"}
+              flex={isFullscreen ? 1 : undefined}
               overflowY="auto"
               bg={snapshot.isDraggingOver ? 'brand.50' : 'gray.50'}
               borderRadius="md"
@@ -212,16 +274,14 @@ function ClusterColumn({
                   <Text fontSize="xs" mt={1}>Drag images here</Text>
                 </Box>
               ) : isFullscreen ? (
-                <SimpleGrid columns={3} spacing={4}>
-                  {cluster.image_ids.map((imageId, index) => {
-                    const image = images[imageId]
-                    if (!image) return null
-                    
+                <SimpleGrid columns={columns} spacing={4}>
+                  {imageList.map((image, index) => {
+                    const originalIndex = cluster.image_ids.indexOf(image.id)
                     return (
                       <ImageTile
-                        key={imageId}
+                        key={image.id}
                         image={image}
-                        index={index}
+                        index={originalIndex >= 0 ? originalIndex : index}
                         sessionId={sessionId}
                         clusterId={cluster.id}
                         isFullscreen={isFullscreen}
@@ -234,15 +294,13 @@ function ClusterColumn({
                 </SimpleGrid>
               ) : (
                 <VStack spacing={2}>
-                  {cluster.image_ids.map((imageId, index) => {
-                    const image = images[imageId]
-                    if (!image) return null
-                    
+                  {imageList.map((image, index) => {
+                    const originalIndex = cluster.image_ids.indexOf(image.id)
                     return (
                       <ImageTile
-                        key={imageId}
+                        key={image.id}
                         image={image}
-                        index={index}
+                        index={originalIndex >= 0 ? originalIndex : index}
                         sessionId={sessionId}
                         clusterId={cluster.id}
                         isFullscreen={isFullscreen}
@@ -260,7 +318,19 @@ function ClusterColumn({
       </VStack>
     </Box>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for React.memo
+  // Only re-render if cluster data or props actually change
+  return (
+    prevProps.cluster.id === nextProps.cluster.id &&
+    prevProps.cluster.image_ids.length === nextProps.cluster.image_ids.length &&
+    prevProps.cluster.image_ids.every((id, i) => id === nextProps.cluster.image_ids[i]) &&
+    JSON.stringify(prevProps.cluster.correction_params) === JSON.stringify(nextProps.cluster.correction_params) &&
+    prevProps.sessionId === nextProps.sessionId &&
+    prevProps.isFullscreen === nextProps.isFullscreen &&
+    prevProps.images === nextProps.images
+  )
+})
 
 export default ClusterColumn
 

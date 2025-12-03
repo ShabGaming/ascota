@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   Box,
   Button,
@@ -42,10 +42,10 @@ import {
   TableContainer,
   Code,
 } from '@chakra-ui/react'
-import { AddIcon, DeleteIcon } from '@chakra-ui/icons'
-import { createSession, listSessions, restoreSession, SessionInfo, deleteSession } from '../api/client'
+import { AddIcon, DeleteIcon, WarningIcon } from '@chakra-ui/icons'
+import { createSession, listSessions, restoreSession, SessionInfo, deleteSession, checkContextStatus } from '../api/client'
 import { useSessionStore } from '../state/session'
-import { useQuery, useMutation, useQueryClient } from 'react-query'
+import { useQuery, useMutation } from 'react-query'
 
 interface SessionSetupProps {
   onComplete: () => void
@@ -60,10 +60,10 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
   const [sensitivity, setSensitivity] = useState(1.0)
   const [previewResolution, setPreviewResolution] = useState(1500)
   const [isLoading, setIsLoading] = useState(false)
+  const [colorCorrectedContexts, setColorCorrectedContexts] = useState<Set<string>>(new Set())
   
   const toast = useToast()
   const setSession = useSessionStore(state => state.setSession)
-  const queryClient = useQueryClient()
   
   // Fetch sessions list
   const { data: sessionsData, refetch: refetchSessions } = useQuery(
@@ -112,7 +112,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
           duration: 2000,
         })
       },
-      onError: (error) => {
+      onError: () => {
         // Even on error, try to refresh the list to remove invalid sessions
         refetchSessions()
         toast({
@@ -125,15 +125,64 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
     }
   )
   
-  const handleAddContext = () => {
-    if (currentPath.trim()) {
-      setContexts([...contexts, currentPath.trim()])
+  const handleAddContext = async () => {
+    const trimmedPath = currentPath.trim()
+    if (trimmedPath) {
+      // Check for duplicates (case-insensitive path comparison)
+      const normalizedPath = trimmedPath.replace(/\\/g, '/').toLowerCase()
+      const isDuplicate = contexts.some(ctx => 
+        ctx.replace(/\\/g, '/').toLowerCase() === normalizedPath
+      )
+      
+      if (isDuplicate) {
+        toast({
+          title: 'Duplicate context',
+          description: 'This directory has already been added',
+          status: 'warning',
+          duration: 3000,
+        })
+        return
+      }
+      
+      // Check if context has been color corrected BEFORE adding to list
+      let isColorCorrected = false
+      try {
+        const status = await checkContextStatus(trimmedPath)
+        isColorCorrected = status.is_color_corrected
+      } catch {
+        // Silently fail - context might not exist yet or file might not be readable
+        // This is expected for new contexts
+      }
+      
+      // Add context to list
+      setContexts([...contexts, trimmedPath])
       setCurrentPath('')
+      
+      // If color corrected, show warning immediately
+      if (isColorCorrected) {
+        setColorCorrectedContexts(prev => new Set(prev).add(trimmedPath))
+        toast({
+          title: 'Context already color corrected',
+          description: 'This directory has been color corrected previously. Exporting will update the status.',
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        })
+      }
     }
   }
   
   const handleRemoveContext = (index: number) => {
+    const removedPath = contexts[index]
     setContexts(contexts.filter((_, i) => i !== index))
+    // Remove from color corrected set if it was there
+    if (removedPath && colorCorrectedContexts.has(removedPath)) {
+      setColorCorrectedContexts(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(removedPath)
+        return newSet
+      })
+    }
   }
   
   const handleStart = async () => {
@@ -233,36 +282,41 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                 
                 {contexts.length > 0 && (
                   <List spacing={2} mt={4}>
-                    {contexts.map((path, index) => (
-                      <ListItem
-                        key={index}
-                        p={2}
-                        bg="gray.50"
-                        borderRadius="md"
-                        display="flex"
-                        justifyContent="space-between"
-                        alignItems="center"
-                      >
-                        <Text fontSize="sm" fontFamily="mono">{path}</Text>
-                        <IconButton
-                          aria-label="Remove context"
-                          icon={<DeleteIcon />}
-                          size="sm"
-                          variant="ghost"
-                          colorScheme="red"
-                          onClick={() => handleRemoveContext(index)}
-                        />
-                      </ListItem>
-                    ))}
+                    {contexts.map((path, index) => {
+                      const isColorCorrected = colorCorrectedContexts.has(path)
+                      return (
+                        <ListItem
+                          key={index}
+                          p={2}
+                          bg="gray.50"
+                          borderRadius="md"
+                          display="flex"
+                          justifyContent="space-between"
+                          alignItems="center"
+                        >
+                          <HStack spacing={2} flex={1}>
+                            <Text fontSize="sm" fontFamily="mono" flex={1}>{path}</Text>
+                            {isColorCorrected && (
+                              <Badge colorScheme="orange" display="flex" alignItems="center" gap={1}>
+                                <WarningIcon />
+                                Already color corrected
+                              </Badge>
+                            )}
+                          </HStack>
+                          <IconButton
+                            aria-label="Remove context"
+                            icon={<DeleteIcon />}
+                            size="sm"
+                            variant="ghost"
+                            colorScheme="red"
+                            onClick={() => handleRemoveContext(index)}
+                            ml={2}
+                          />
+                        </ListItem>
+                      )
+                    })}
                   </List>
                 )}
-              </FormControl>
-              
-              <FormControl>
-                <FormLabel>Image Source</FormLabel>
-                <Text fontSize="sm" color="gray.600" p={2} bg="blue.50" borderRadius="md">
-                  RAW Mode (always enabled) - All images must have RAW files
-                </Text>
               </FormControl>
               
               <FormControl>

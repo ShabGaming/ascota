@@ -1,6 +1,7 @@
-import { Box, Image, Text } from '@chakra-ui/react'
+import { useMemo, memo, useState, useEffect } from 'react'
+import { Box, Image, Text, Skeleton } from '@chakra-ui/react'
 import { Draggable } from 'react-beautiful-dnd'
-import { ImageItem, getPreviewUrl } from '../api/client'
+import { ImageItem, getPreviewUrl, hashCorrectionParams } from '../api/client'
 import { useSessionStore } from '../state/session'
 
 interface ImageTileProps {
@@ -13,43 +14,78 @@ interface ImageTileProps {
   showIndividual?: boolean
 }
 
-function ImageTile({ image, index, sessionId, clusterId, isFullscreen = false, showOverall = true, showIndividual = true }: ImageTileProps) {
-  const { 
-    selectedImageId, 
-    setSelectedImage, 
-    clusters,
-    pendingOverallCorrection,
-    pendingIndividualCorrection
-  } = useSessionStore()
+const ImageTile = memo(function ImageTile({ 
+  image, 
+  index, 
+  sessionId, 
+  clusterId, 
+  isFullscreen = false, 
+  showOverall = true, 
+  showIndividual = true 
+}: ImageTileProps) {
+  // Use selectors to prevent unnecessary re-renders
+  const selectedImageId = useSessionStore(state => state.selectedImageId)
+  const setSelectedImage = useSessionStore(state => state.setSelectedImage)
+  const cluster = useSessionStore(state => state.clusters.find(c => c.id === clusterId))
+  const pendingOverallCorrection = useSessionStore(state => state.pendingOverallCorrection[clusterId])
+  const pendingIndividualCorrection = useSessionStore(state => state.pendingIndividualCorrection[image.id])
+  
   const isSelected = selectedImageId === image.id
   
   const handleClick = () => {
-    setSelectedImage(image.id, clusterId)
+    // Only allow selection in fullscreen mode
+    if (isFullscreen) {
+      setSelectedImage(image.id, clusterId)
+    }
   }
   
-  // Get cluster to access correction params
-  const cluster = clusters.find(c => c.id === clusterId)
-  
   // Use pending corrections for real-time preview if available, otherwise use saved corrections
-  const overallParams = pendingOverallCorrection[clusterId] || cluster?.correction_params
-  const individualParams = pendingIndividualCorrection[image.id] || undefined
+  const overallParams = pendingOverallCorrection || cluster?.correction_params
+  const individualParams = pendingIndividualCorrection || undefined
   
-  // Create preview URL - use pending overall for cluster preview, individual for this image
-  const previewSize = isFullscreen ? 800 : 400
-  // For preview, use overall params (cluster-level) - individual will be applied by backend
-  const previewUrl = getPreviewUrl(
-    sessionId, 
-    image.id, 
-    clusterId, 
-    previewSize, 
-    overallParams,
-    individualParams,
-    showOverall,
-    showIndividual
-  )
+  // Use consistent preview size to prevent reloads when toggling fullscreen
+  // The backend will handle resizing, so we use a fixed size that works for both views
+  const previewSize = 600
   
-  // Use a key that changes when corrections or visibility change to force image reload
-  const imageKey = `${image.id}-${clusterId}-${JSON.stringify(overallParams)}-${JSON.stringify(individualParams)}-${showOverall}-${showIndividual}`
+  // Memoize preview URL - only regenerate when params actually change
+  const previewUrl = useMemo(() => {
+    return getPreviewUrl(
+      sessionId, 
+      image.id, 
+      clusterId, 
+      previewSize, 
+      overallParams,
+      individualParams,
+      showOverall,
+      showIndividual
+    )
+  }, [sessionId, image.id, clusterId, previewSize, overallParams, individualParams, showOverall, showIndividual])
+  
+  // Memoize image key using stable hash function - only changes when corrections actually change
+  const imageKey = useMemo(() => {
+    const overallHash = hashCorrectionParams(overallParams)
+    const individualHash = hashCorrectionParams(individualParams)
+    return `${image.id}-${clusterId}-${overallHash}-${individualHash}-${showOverall}-${showIndividual}`
+  }, [image.id, clusterId, overallParams, individualParams, showOverall, showIndividual])
+  
+  // Track image loading state to prevent grey flash
+  const [isLoading, setIsLoading] = useState(true)
+  const [imageError, setImageError] = useState(false)
+  
+  // Reset loading state when image key changes (new image URL)
+  useEffect(() => {
+    setIsLoading(true)
+    setImageError(false)
+  }, [imageKey])
+  
+  const handleImageLoad = () => {
+    setIsLoading(false)
+  }
+  
+  const handleImageError = () => {
+    setIsLoading(false)
+    setImageError(true)
+  }
   
   return (
     <Draggable draggableId={image.id} index={index}>
@@ -74,15 +110,39 @@ function ImageTile({ image, index, sessionId, clusterId, isFullscreen = false, s
             boxShadow: 'md',
           }}
         >
-          <Image
-            key={imageKey}
-            src={previewUrl}
-            alt={`Image ${image.find_number}`}
-            w="full"
-            h={isFullscreen ? "400px" : "180px"}
-            objectFit="cover"
-            fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3C/svg%3E"
-          />
+          <Box 
+            position="relative" 
+            w="full" 
+            h={isFullscreen ? undefined : "180px"}
+            bg="gray.100"
+            overflow="hidden"
+            style={isFullscreen ? { aspectRatio: '16/9' } : undefined}
+          >
+            {isLoading && !imageError && (
+              <Skeleton
+                position="absolute"
+                top={0}
+                left={0}
+                w="full"
+                h="full"
+                borderRadius="md"
+              />
+            )}
+            <Image
+              key={imageKey}
+              src={previewUrl}
+              alt={`Image ${image.find_number}`}
+              w="full"
+              h="full"
+              objectFit="cover"
+              loading="lazy"
+              fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23ddd' width='100' height='100'/%3E%3C/svg%3E"
+              opacity={isLoading ? 0 : 1}
+              transition="opacity 0.3s ease-in-out"
+              onLoad={handleImageLoad}
+              onError={handleImageError}
+            />
+          </Box>
           <Box p={2} bg="gray.50">
             <Text fontSize="xs" fontWeight="medium" noOfLines={1}>
               Find {image.find_number}
@@ -95,7 +155,19 @@ function ImageTile({ image, index, sessionId, clusterId, isFullscreen = false, s
       )}
     </Draggable>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for React.memo
+  // Only re-render if props actually change
+  return (
+    prevProps.image.id === nextProps.image.id &&
+    prevProps.index === nextProps.index &&
+    prevProps.sessionId === nextProps.sessionId &&
+    prevProps.clusterId === nextProps.clusterId &&
+    prevProps.isFullscreen === nextProps.isFullscreen &&
+    prevProps.showOverall === nextProps.showOverall &&
+    prevProps.showIndividual === nextProps.showIndividual
+  )
+})
 
 export default ImageTile
 

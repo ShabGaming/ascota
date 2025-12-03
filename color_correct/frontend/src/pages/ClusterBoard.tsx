@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   Box,
   Container,
@@ -66,18 +66,106 @@ function ClusterBoard({
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreenClusterId, setFullscreenClusterId] = useState<string | null>(null)
   
+  // Cookie helper functions
+  const getCookie = (name: string): string | null => {
+    const value = `; ${document.cookie}`
+    const parts = value.split(`; ${name}=`)
+    if (parts.length === 2) return parts.pop()?.split(';').shift() || null
+    return null
+  }
+  
+  const setCookie = (name: string, value: string, days: number = 365) => {
+    const expires = new Date()
+    expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000)
+    document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`
+  }
+  
+  // Load split position from cookie on mount
+  const getInitialSplitPosition = (): number => {
+    const saved = getCookie('colorCorrectSplitPosition')
+    if (saved) {
+      const parsed = parseFloat(saved)
+      if (!isNaN(parsed) && parsed >= 20 && parsed <= 80) {
+        return parsed
+      }
+    }
+    return 50 // Default
+  }
+  
+  const [splitPosition, setSplitPosition] = useState(getInitialSplitPosition())
+  const [isDragging, setIsDragging] = useState(false)
+  const splitterRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  
   const toast = useToast()
   const { clusters, images, setClusters, moveImageLocally, selectedImageId, selectedClusterId } = useSessionStore()
   
   const handleToggleFullscreen = (clusterId: string) => {
-    setFullscreenClusterId(fullscreenClusterId === clusterId ? null : clusterId)
+    if (fullscreenClusterId === clusterId) {
+      setFullscreenClusterId(null)
+      // Clear selected image when exiting fullscreen
+      useSessionStore.getState().setSelectedImage(null, null)
+    } else {
+      setFullscreenClusterId(clusterId)
+    }
   }
+  
+  // Handle splitter drag
+  const handleSplitterMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+  
+  useEffect(() => {
+    if (isDragging) {
+      // Set global cursor during drag
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    } else {
+      // Reset cursor when not dragging
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    
+    if (!isDragging) return
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return
+      
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const containerWidth = containerRect.width
+      const mouseX = e.clientX - containerRect.left
+      
+      // Calculate percentage, constrained between 20% and 80%
+      const newPosition = Math.max(20, Math.min(80, (mouseX / containerWidth) * 100))
+      setSplitPosition(newPosition)
+      // Save to cookie
+      setCookie('colorCorrectSplitPosition', newPosition.toString())
+    }
+    
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+    
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+      // Cleanup cursor on unmount
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isDragging])
   
   // Handle ESC key to exit fullscreen
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && fullscreenClusterId) {
         setFullscreenClusterId(null)
+        // Clear selected image when exiting fullscreen
+        useSessionStore.getState().setSelectedImage(null, null)
       }
     }
     window.addEventListener('keydown', handleEsc)
@@ -446,20 +534,70 @@ function ClusterBoard({
       <Box>
         <DragDropContext onDragEnd={handleDragEnd}>
           {fullscreenClusterId ? (
-            // Fullscreen mode: show only the fullscreen cluster, expanded
-            <Box p={6} h="calc(100vh - 180px)" overflowY="auto">
-              {clusters
-                .filter(c => c.id === fullscreenClusterId)
-                .map((cluster) => (
-                  <ClusterColumn
-                    key={cluster.id}
-                    cluster={cluster}
-                    images={images}
+            // Fullscreen mode: split view with resizable divider
+            <Box
+              ref={containerRef}
+              h="calc(100vh - 180px)"
+              display="flex"
+              position="relative"
+            >
+              {/* Left panel: Images */}
+              <Box
+                flex={`0 0 ${splitPosition}%`}
+                overflowY="auto"
+                overflowX="hidden"
+                p={6}
+              >
+                {clusters
+                  .filter(c => c.id === fullscreenClusterId)
+                  .map((cluster) => (
+                    <ClusterColumn
+                      key={cluster.id}
+                      cluster={cluster}
+                      images={images}
+                      sessionId={sessionId}
+                      isFullscreen={true}
+                      onToggleFullscreen={() => handleToggleFullscreen(cluster.id)}
+                    />
+                  ))}
+              </Box>
+              
+              {/* Resizable splitter */}
+              <Box
+                ref={splitterRef}
+                w="4px"
+                bg={isDragging ? "brand.500" : "gray.300"}
+                cursor="col-resize"
+                position="relative"
+                flexShrink={0}
+                onMouseDown={handleSplitterMouseDown}
+                _hover={{
+                  bg: 'brand.400',
+                }}
+                transition="background 0.2s"
+                zIndex={10}
+                style={{ userSelect: 'none' }}
+              />
+              
+              {/* Right panel: Correction panel */}
+              <Box
+                flex={`0 0 ${100 - splitPosition}%`}
+                overflowY="auto"
+                overflowX="hidden"
+                bg="gray.50"
+              >
+                {selectedImageId && selectedClusterId && selectedClusterId === fullscreenClusterId ? (
+                  <CorrectionPanel
                     sessionId={sessionId}
-                    isFullscreen={true}
-                    onToggleFullscreen={() => handleToggleFullscreen(cluster.id)}
+                    clusterId={selectedClusterId}
+                    imageId={selectedImageId}
                   />
-                ))}
+                ) : (
+                  <Box p={8} textAlign="center" color="gray.400">
+                    <Text fontSize="lg">Select an image to start color correction</Text>
+                  </Box>
+                )}
+              </Box>
             </Box>
           ) : (
             // Normal mode: show all clusters in horizontal scroll
@@ -478,15 +616,6 @@ function ClusterBoard({
           )}
         </DragDropContext>
       </Box>
-      
-      {/* Correction panel (sticky) */}
-      {selectedImageId && selectedClusterId && (
-        <CorrectionPanel
-          sessionId={sessionId}
-          clusterId={selectedClusterId}
-          imageId={selectedImageId}
-        />
-      )}
       
       {/* Export bar */}
       <ExportBar sessionId={sessionId} />

@@ -188,6 +188,13 @@ export const resetClusterCorrection = async (
   return response.data
 }
 
+// Stable hash function for correction params (faster than JSON.stringify)
+export const hashCorrectionParams = (params?: CorrectionParams): string => {
+  if (!params) return 'none'
+  // Round to 2 decimal places to avoid floating point precision issues
+  return `${params.temperature.toFixed(0)}_${params.tint.toFixed(0)}_${params.exposure.toFixed(2)}_${params.contrast.toFixed(2)}_${params.saturation.toFixed(2)}_${params.red_gain.toFixed(2)}_${params.green_gain.toFixed(2)}_${params.blue_gain.toFixed(2)}`
+}
+
 export const getPreviewUrl = (
   sessionId: string,
   imageId: string,
@@ -264,6 +271,13 @@ export const restoreSession = async (sessionId: string): Promise<{ session_id: s
 
 export const deleteSession = async (sessionId: string): Promise<void> => {
   await apiClient.delete(`/sessions/${sessionId}`)
+}
+
+export const checkContextStatus = async (contextPath: string): Promise<{ is_color_corrected: boolean }> => {
+  const response = await apiClient.get('/sessions/check-context-status', {
+    params: { context_path: contextPath }
+  })
+  return response.data
 }
 
 export const setIndividualCorrection = async (
