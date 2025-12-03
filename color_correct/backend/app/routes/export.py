@@ -83,6 +83,33 @@ def _run_export_job(session_id: str, job_id: str):
             logger.error(f"Failed to save corrections to .ascota folders: {e}", exc_info=True)
             # Don't fail the export if saving corrections fails
         
+        # Append color correction status to context directories
+        try:
+            from app.services.ascota_storage import append_context_status
+            
+            # Get unique context paths from images
+            context_paths = set()
+            for image in session.images.values():
+                if image.context_id:
+                    context_paths.add(image.context_id)
+            
+            # Append status to each context directory
+            for context_path in context_paths:
+                append_context_status(context_path, {
+                    "color_correct_status": True,
+                    "export_summary": {
+                        "total_images": summary.total_images,
+                        "total_files_written": summary.total_files_written,
+                        "new_files_count": summary.new_files_count,
+                        "overwritten_count": summary.overwritten_count
+                    }
+                })
+            
+            logger.info(f"Appended color correction status to {len(context_paths)} context directories")
+        except Exception as e:
+            logger.error(f"Failed to append context status: {e}", exc_info=True)
+            # Don't fail the export if saving context status fails
+        
         logger.info(f"Export job {job_id} completed: {summary.total_files_written} files written")
         
     except Exception as e:

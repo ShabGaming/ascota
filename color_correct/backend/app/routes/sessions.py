@@ -1,12 +1,14 @@
 """Session management routes."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import List
 import logging
+from pathlib import Path
 
 from app.services.models import CreateSessionRequest, CreateSessionResponse, JobStatusResponse
 from app.services.session_store import get_session_store
 from app.services.session_persistence import list_sessions as list_persisted_sessions
+from app.services.ascota_storage import ensure_context_ascota_folder
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -112,6 +114,52 @@ async def list_sessions():
     }
 
 
+@router.get("/check-context-status")
+async def check_context_status(context_path: str = Query(..., description="Path to context directory")):
+    """Check if a context directory has been color corrected.
+    
+    Args:
+        context_path: Path to context directory
+        
+    Returns:
+        Dictionary with is_color_corrected boolean
+    """
+    try:
+        import json
+        
+        ascota_dir = ensure_context_ascota_folder(context_path)
+        status_file = ascota_dir / "context_status.json"
+        
+        if not status_file.exists():
+            return {"is_color_corrected": False}
+        
+        try:
+            with open(status_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+            # Check latest_status for color_correct_status
+            if "latest_status" in data:
+                latest = data["latest_status"]
+                is_corrected = latest.get("color_correct_status", False)
+                return {"is_color_corrected": bool(is_corrected)}
+            
+            # Fallback: check status_history
+            if "status_history" in data and len(data["status_history"]) > 0:
+                last_entry = data["status_history"][-1]
+                is_corrected = last_entry.get("color_correct_status", False)
+                return {"is_color_corrected": bool(is_corrected)}
+            
+            return {"is_color_corrected": False}
+            
+        except Exception as e:
+            logger.warning(f"Failed to read context_status.json for {context_path}: {e}")
+            return {"is_color_corrected": False}
+            
+    except Exception as e:
+        logger.error(f"Error checking context status for {context_path}: {e}")
+        return {"is_color_corrected": False}
+
+
 @router.get("/{session_id}")
 async def get_session_info(session_id: str):
     """Get session information including options."""
@@ -136,6 +184,7 @@ async def get_session_info(session_id: str):
             "preview_resolution": session.options.preview_resolution,
         }
     }
+
 
 @router.post("/{session_id}/restore")
 async def restore_session(session_id: str):

@@ -33,32 +33,52 @@ def _run_clustering_job(session_id: str, job_id: str, new_sensitivity: float = N
     
     try:
         job.status = JobStatus.RUNNING
-        job.progress = 0.1
-        job.message = "Scanning contexts..."
+        job.progress = 0.0
+        job.message = "Starting scan..."
         
         # Update sensitivity if provided
         if new_sensitivity is not None:
             session.options.sensitivity = new_sensitivity
         
-        # Scan all contexts
-        images = scan_all_contexts(session.contexts, session.options.image_source.value)
+        # Scan all contexts with progress updates
+        images = {}
+        total_contexts = len(session.contexts)
+        
+        for idx, context_path in enumerate(session.contexts):
+            progress = 0.05 + (idx / total_contexts) * 0.25  # 5% to 30%
+            job.progress = progress
+            job.message = f"Scanning context {idx + 1}/{total_contexts}..."
+            
+            from app.services.scanner import scan_context_directory
+            context_images = scan_context_directory(context_path, session.options.image_source.value)
+            for img in context_images:
+                images[img.id] = img
         
         if not images:
             job.status = JobStatus.FAILED
             job.error = "No images found in contexts"
             return
         
-        job.progress = 0.4
-        job.message = f"Found {len(images)} images, clustering..."
+        job.progress = 0.3
+        job.message = f"Found {len(images)} images, preparing for clustering..."
         
         # Run clustering with preview resolution
         preview_resolution = session.options.preview_resolution if hasattr(session.options, 'preview_resolution') else 1500
+        
+        # Update progress during clustering preparation
+        job.progress = 0.35
+        job.message = "Converting RAW files for clustering..."
+        
         clusters = cluster_images(
             images,
             k=session.options.custom_k,
             sensitivity=session.options.sensitivity,
             preview_resolution=preview_resolution
         )
+        
+        # Update progress during cluster assignment
+        job.progress = 0.9
+        job.message = "Finalizing clusters..."
         
         # Update session
         session.images = images
