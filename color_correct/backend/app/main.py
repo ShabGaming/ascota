@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 
-from app.routes import sessions, cluster, preview, export as export_route
+from app.routes import sessions, cluster, preview, export as export_route, reference_images
 
 # Configure logging
 logging.basicConfig(
@@ -36,6 +36,10 @@ app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
 app.include_router(cluster.router, prefix="/sessions", tags=["clustering"])
 app.include_router(preview.router, prefix="/sessions", tags=["preview"])
 app.include_router(export_route.router, prefix="/sessions", tags=["export"])
+app.include_router(reference_images.router, prefix="/sessions", tags=["reference-images"])
+# Add preset references endpoints
+from app.routes import reference_images
+app.add_api_route("/preset-references", reference_images.list_preset_references, methods=["GET"], tags=["reference-images"])
 
 
 @app.get("/")
