@@ -23,6 +23,7 @@ import {
   IconButton,
   FormControl,
   FormLabel,
+  Switch,
 } from '@chakra-ui/react'
 import { ArrowBackIcon } from '@chakra-ui/icons'
 import { DragDropContext, DropResult } from 'react-beautiful-dnd'
@@ -41,6 +42,7 @@ import {
 import { useSessionStore } from '../state/session'
 import ClusterColumn from '../components/ClusterColumn'
 import CorrectionPanel from '../components/CorrectionPanel'
+import ReferencePanel from '../components/ReferencePanel'
 import ExportBar from '../components/ExportBar'
 
 interface ClusterBoardProps {
@@ -65,6 +67,7 @@ function ClusterBoard({
   const [reclusterSensitivity, setReclusterSensitivity] = useState(1.0)
   const [canUndo, setCanUndo] = useState(false)
   const [fullscreenClusterId, setFullscreenClusterId] = useState<string | null>(null)
+  const [referenceImagesEnabled, setReferenceImagesEnabled] = useState(false)
   
   // Cookie helper functions
   const getCookie = (name: string): string | null => {
@@ -80,21 +83,37 @@ function ClusterBoard({
     document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`
   }
   
-  // Load split position from cookie on mount
+  // Load split positions from cookie on mount
   const getInitialSplitPosition = (): number => {
     const saved = getCookie('colorCorrectSplitPosition')
     if (saved) {
       const parsed = parseFloat(saved)
-      if (!isNaN(parsed) && parsed >= 20 && parsed <= 80) {
+      // Ensure correction panel has at least 30% width
+      if (!isNaN(parsed) && parsed >= 20 && parsed <= 70) {
         return parsed
       }
     }
-    return 50 // Default
+    return 40 // Default - gives 60% to correction panel
+  }
+  
+  const getInitialReferenceSplitPosition = (): number => {
+    const saved = getCookie('colorCorrectReferenceSplitPosition')
+    if (saved) {
+      const parsed = parseFloat(saved)
+      // Ensure correction panel has at least 30% width
+      if (!isNaN(parsed) && parsed >= 20 && parsed <= 70) {
+        return parsed
+      }
+    }
+    return 30 // Default for 3-panel layout: 30% images, 20% reference, 50% correction
   }
   
   const [splitPosition, setSplitPosition] = useState(getInitialSplitPosition())
+  const [referenceSplitPosition, setReferenceSplitPosition] = useState(getInitialReferenceSplitPosition())
   const [isDragging, setIsDragging] = useState(false)
+  const [isDraggingReference, setIsDraggingReference] = useState(false)
   const splitterRef = useRef<HTMLDivElement>(null)
+  const referenceSplitterRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   
   const toast = useToast()
@@ -116,8 +135,13 @@ function ClusterBoard({
     setIsDragging(true)
   }, [])
   
+  const handleReferenceSplitterMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDraggingReference(true)
+  }, [])
+  
   useEffect(() => {
-    if (isDragging) {
+    if (isDragging || isDraggingReference) {
       // Set global cursor during drag
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
@@ -127,7 +151,7 @@ function ClusterBoard({
       document.body.style.userSelect = ''
     }
     
-    if (!isDragging) return
+    if (!isDragging && !isDraggingReference) return
     
     const handleMouseMove = (e: MouseEvent) => {
       if (!containerRef.current) return
@@ -136,15 +160,29 @@ function ClusterBoard({
       const containerWidth = containerRect.width
       const mouseX = e.clientX - containerRect.left
       
-      // Calculate percentage, constrained between 20% and 80%
-      const newPosition = Math.max(20, Math.min(80, (mouseX / containerWidth) * 100))
-      setSplitPosition(newPosition)
-      // Save to cookie
-      setCookie('colorCorrectSplitPosition', newPosition.toString())
+      if (isDragging) {
+        // Calculate percentage for first splitter
+        // Constrain to ensure correction panel has at least 30% width
+        const maxPosition = referenceImagesEnabled ? 70 : 70 // Max 70% so correction panel has at least 30%
+        const newPosition = Math.max(20, Math.min(maxPosition, (mouseX / containerWidth) * 100))
+        setSplitPosition(newPosition)
+        setCookie('colorCorrectSplitPosition', newPosition.toString())
+        // Ensure reference splitter is always after first splitter
+        if (referenceImagesEnabled && newPosition >= referenceSplitPosition) {
+          setReferenceSplitPosition(Math.min(70, newPosition + 15))
+        }
+      } else if (isDraggingReference) {
+        // Calculate percentage for reference splitter
+        // Must be after first splitter and ensure correction panel has at least 30% width
+        const newPosition = Math.max(splitPosition + 15, Math.min(70, (mouseX / containerWidth) * 100))
+        setReferenceSplitPosition(newPosition)
+        setCookie('colorCorrectReferenceSplitPosition', newPosition.toString())
+      }
     }
     
     const handleMouseUp = () => {
       setIsDragging(false)
+      setIsDraggingReference(false)
     }
     
     window.addEventListener('mousemove', handleMouseMove)
@@ -157,7 +195,7 @@ function ClusterBoard({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
-  }, [isDragging])
+  }, [isDragging, isDraggingReference, referenceImagesEnabled, splitPosition, referenceSplitPosition])
   
   // Handle ESC key to exit fullscreen
   useEffect(() => {
@@ -471,7 +509,18 @@ function ClusterBoard({
                   {clusters.length} clusters · {Object.keys(images).length} images
                 </Text>
               </VStack>
-              <HStack spacing={2}>
+              <HStack spacing={4}>
+                <FormControl display="flex" alignItems="center" w="auto">
+                  <FormLabel htmlFor="reference-toggle" mb={0} fontSize="sm" mr={2}>
+                    Reference Images
+                  </FormLabel>
+                  <Switch
+                    id="reference-toggle"
+                    isChecked={referenceImagesEnabled}
+                    onChange={(e) => setReferenceImagesEnabled(e.target.checked)}
+                    colorScheme="brand"
+                  />
+                </FormControl>
                 <Button colorScheme="brand" onClick={handleCreateCluster}>
                   New Cluster
                 </Button>
@@ -534,7 +583,7 @@ function ClusterBoard({
       <Box>
         <DragDropContext onDragEnd={handleDragEnd}>
           {fullscreenClusterId ? (
-            // Fullscreen mode: split view with resizable divider
+            // Fullscreen mode: split view with resizable divider(s)
             <Box
               ref={containerRef}
               h="calc(100vh - 180px)"
@@ -562,7 +611,7 @@ function ClusterBoard({
                   ))}
               </Box>
               
-              {/* Resizable splitter */}
+              {/* First resizable splitter */}
               <Box
                 ref={splitterRef}
                 w="4px"
@@ -579,12 +628,45 @@ function ClusterBoard({
                 style={{ userSelect: 'none' }}
               />
               
+              {/* Middle panel: Reference Images (when enabled) */}
+              {referenceImagesEnabled && (
+                <>
+                  <Box
+                    flex={`0 0 ${Math.max(15, referenceSplitPosition - splitPosition)}%`}
+                    overflowY="auto"
+                    overflowX="hidden"
+                    bg="white"
+                    minW="200px"
+                  >
+                    <ReferencePanel sessionId={sessionId} />
+                  </Box>
+                  
+                  {/* Second resizable splitter */}
+                  <Box
+                    ref={referenceSplitterRef}
+                    w="4px"
+                    bg={isDraggingReference ? "brand.500" : "gray.300"}
+                    cursor="col-resize"
+                    position="relative"
+                    flexShrink={0}
+                    onMouseDown={handleReferenceSplitterMouseDown}
+                    _hover={{
+                      bg: 'brand.400',
+                    }}
+                    transition="background 0.2s"
+                    zIndex={10}
+                    style={{ userSelect: 'none' }}
+                  />
+                </>
+              )}
+              
               {/* Right panel: Correction panel */}
               <Box
-                flex={`0 0 ${100 - splitPosition}%`}
+                flex={`0 0 ${referenceImagesEnabled ? Math.max(30, 100 - referenceSplitPosition) : Math.max(30, 100 - splitPosition)}%`}
                 overflowY="auto"
                 overflowX="hidden"
                 bg="gray.50"
+                minW="400px"
               >
                 {selectedImageId && selectedClusterId && selectedClusterId === fullscreenClusterId ? (
                   <CorrectionPanel
