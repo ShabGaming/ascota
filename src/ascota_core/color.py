@@ -570,16 +570,16 @@ def _select_whitest_corners(corners: List[np.ndarray], n_select: int = 3) -> Lis
 def _extract_lighting_features(corners: List[np.ndarray]) -> np.ndarray:
     """Extract lighting feature vector from selected corner regions.
     
-    Builds a feature vector from the selected corners by computing mean
-    L*a*b* values for each corner. This creates a compact representation
-    of the lighting conditions in the image.
+    Builds a richer feature vector from the selected corners by computing mean
+    and standard deviation of L*a*b* values for each corner. This creates a more
+    robust representation of the lighting conditions in the image.
     
     Args:
         corners: List of selected corner region arrays.
         
     Returns:
-        Feature vector as 1D numpy array with shape (n_corners * 3,).
-        Each corner contributes 3 values: mean L*, mean a*, mean b*.
+        Feature vector as 1D numpy array with shape (n_corners * 6,).
+        Each corner contributes 6 values: mean L*, mean a*, mean b*, std L*, std a*, std b*.
     """
     features = []
     
@@ -587,12 +587,15 @@ def _extract_lighting_features(corners: List[np.ndarray]) -> np.ndarray:
         # Convert to LAB color space
         lab = bgr_linear_to_lab_u8(corner)
         
-        # Extract mean values for each channel
+        # Extract mean and std values for each channel
         mean_L = np.mean(lab[..., 0])
         mean_a = np.mean(lab[..., 1]) 
         mean_b = np.mean(lab[..., 2])
+        std_L = np.std(lab[..., 0])
+        std_a = np.std(lab[..., 1])
+        std_b = np.std(lab[..., 2])
         
-        features.extend([mean_L, mean_a, mean_b])
+        features.extend([mean_L, mean_a, mean_b, std_L, std_a, std_b])
     
     return np.array(features, dtype=np.float32)
 
@@ -602,7 +605,7 @@ def _find_optimal_k_bic(features: np.ndarray, max_k: int = 10) -> int:
     
     Tests different values of k and selects the one that minimizes BIC,
     balancing model fit with complexity. Uses Gaussian Mixture Models
-    for BIC calculation.
+    for BIC calculation. Includes elbow detection for more robust selection.
     
     Args:
         features: Feature matrix with shape (n_samples, n_features).
@@ -620,7 +623,7 @@ def _find_optimal_k_bic(features: np.ndarray, max_k: int = 10) -> int:
     
     for k in range(1, max_k + 1):
         try:
-            gmm = GaussianMixture(n_components=k, random_state=42)
+            gmm = GaussianMixture(n_components=k, random_state=42, max_iter=100)
             gmm.fit(features)
             bic = gmm.bic(features)
             bic_scores.append(bic)
@@ -628,21 +631,48 @@ def _find_optimal_k_bic(features: np.ndarray, max_k: int = 10) -> int:
             # If GMM fails for this k, assign a high BIC score
             bic_scores.append(np.inf)
     
-    # Return k with minimum BIC
-    optimal_k = np.argmin(bic_scores) + 1
+    if not bic_scores or all(np.isinf(bic_scores)):
+        return 1
+    
+    # Find elbow point: look for the largest drop in BIC
+    bic_array = np.array(bic_scores)
+    valid_mask = ~np.isinf(bic_array)
+    if not np.any(valid_mask):
+        return 1
+    
+    # Find the point with largest negative change (elbow)
+    if len(bic_array) > 1:
+        changes = np.diff(bic_array)
+        # Find the largest drop (most negative change)
+        if np.any(changes < 0):
+            # Add 2 because diff reduces length by 1, and k starts at 1
+            elbow_k = np.argmin(changes) + 2
+            # Use elbow if it's reasonable, otherwise use minimum BIC
+            if elbow_k <= max_k and bic_array[elbow_k - 1] < np.inf:
+                optimal_k = elbow_k
+            else:
+                optimal_k = np.argmin(bic_array) + 1
+        else:
+            optimal_k = np.argmin(bic_array) + 1
+    else:
+        optimal_k = 1
+    
     return optimal_k
 
 
-def _cluster_images(features: np.ndarray, k: Optional[int] = None, max_k: Optional[int] = None) -> np.ndarray:
-    """Cluster images based on their lighting features.
+def _cluster_images(features: np.ndarray, k: Optional[int] = None, max_k: Optional[int] = None, 
+                   n_runs: int = 5) -> np.ndarray:
+    """Cluster images based on their lighting features with improved consistency.
     
-    Performs k-means clustering on the feature vectors. If k is not provided,
-    automatically determines the optimal k using BIC.
+    Performs k-means clustering on the feature vectors with multiple runs and
+    consensus voting for better consistency. If k is not provided, automatically
+    determines the optimal k using BIC.
     
     Args:
         features: Feature matrix with shape (n_samples, n_features).
         k: Number of clusters. If None, determined automatically via BIC.
         max_k: Maximum k to try when auto-selecting via BIC.
+        n_runs: Number of k-means runs for consensus (default 5).
         
     Returns:
         Array of cluster labels with length n_samples.
@@ -659,10 +689,23 @@ def _cluster_images(features: np.ndarray, k: Optional[int] = None, max_k: Option
     if k == 1:
         return np.array([0] * n_samples)
     
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(features)
+    # Run k-means multiple times and use consensus
+    all_labels = []
+    for run in range(n_runs):
+        kmeans = KMeans(n_clusters=k, random_state=42 + run, n_init=1, max_iter=300)
+        labels = kmeans.fit_predict(features)
+        all_labels.append(labels)
     
-    return labels
+    # Consensus voting: assign each point to the cluster it's assigned to most often
+    all_labels = np.array(all_labels)  # Shape: (n_runs, n_samples)
+    consensus_labels = np.zeros(n_samples, dtype=np.int32)
+    
+    for i in range(n_samples):
+        # Get the most common label for this sample across all runs
+        votes = all_labels[:, i]
+        consensus_labels[i] = np.bincount(votes).argmax()
+    
+    return consensus_labels
 
 
 def group_similar_images_by_lighting(directory: str, k: Optional[int] = None, 
@@ -674,6 +717,12 @@ def group_similar_images_by_lighting(directory: str, k: Optional[int] = None,
     The function examines the four corners of each image, selects the three
     corners closest to white (to avoid color cards), extracts lighting features,
     and clusters the images accordingly.
+    
+    Improved version with:
+    - Better feature extraction (mean + std)
+    - Feature normalization for consistent scaling
+    - Multiple k-means runs with consensus for consistency
+    - Better sensitivity control through distance-based thresholding
     
     Args:
         directory: Path to directory containing images to analyze.
@@ -751,33 +800,48 @@ def group_similar_images_by_lighting(directory: str, k: Optional[int] = None,
     # Stack features into matrix
     features_matrix = np.vstack(features_list)
     
-    # Apply sensitivity: scale features to amplify/mute differences
+    # Normalize features (zero mean, unit variance) for consistent clustering
+    feature_mean = np.mean(features_matrix, axis=0, keepdims=True)
+    feature_std = np.std(features_matrix, axis=0, keepdims=True)
+    # Avoid division by zero
+    feature_std = np.where(feature_std < 1e-6, 1.0, feature_std)
+    features_normalized = (features_matrix - feature_mean) / feature_std
+    
+    # Apply sensitivity: adjust the effective distance threshold
+    # Higher sensitivity = smaller distances needed to separate clusters
     try:
         sens = float(sensitivity)
     except Exception:
         sens = 1.0
-    sens = max(0.1, sens)  # prevent zero/negative
-    features_scaled = features_matrix * sens
+    sens = max(0.1, min(5.0, sens))  # Clamp between 0.1 and 5.0
+    
+    # Scale normalized features by sensitivity (higher = more separation)
+    features_scaled = features_normalized * sens
+    
     if debug:
-        print(f"DEBUG: group_similar_images_by_lighting - features_matrix.shape={features_matrix.shape}, sens={sens}")
+        print(f"DEBUG: group_similar_images_by_lighting - features_matrix.shape={features_matrix.shape}, sensitivity={sens}")
+        print(f"DEBUG: feature_mean range: [{np.min(feature_mean):.2f}, {np.max(feature_mean):.2f}]")
+        print(f"DEBUG: feature_std range: [{np.min(feature_std):.2f}, {np.max(feature_std):.2f}]")
     
     n_samples = features_matrix.shape[0]
     
-    # 'k' is dependent on the number of samples, with a minimum of 10 or n_samples/6
-    number_of_images_factor = max(10, n_samples // 6)
-    if debug:
-        print(f"DEBUG: group_similar_images_by_lighting - n_samples={n_samples}, number_of_images_factor={number_of_images_factor}")
-
-    # Cluster images (pass scaled features and max_k for BIC)
-    if sensitivity == 1.0:
-        proposed_max_k = number_of_images_factor
+    # Adaptive max_k based on number of samples and sensitivity
+    # Base max_k on sample size, adjusted by sensitivity
+    base_max_k = max(2, min(20, n_samples // 3))
+    if sensitivity > 1.0:
+        # Higher sensitivity allows more clusters
+        proposed_max_k = min(n_samples, int(base_max_k * (1.0 + (sensitivity - 1.0) * 0.5)))
+    elif sensitivity < 1.0:
+        # Lower sensitivity prefers fewer clusters
+        proposed_max_k = max(2, int(base_max_k * sensitivity))
     else:
-        # Compute a sensible max_k for BIC based on sensitivity (higher sens will result in more clusters)
-        proposed_max_k = max(2, int(number_of_images_factor * sens))
-        proposed_max_k = min(proposed_max_k, n_samples)
+        proposed_max_k = base_max_k
+    
     if debug:
-        print(f"DEBUG: group_similar_images_by_lighting - n_samples={n_samples}, number_of_images_factor={number_of_images_factor}, proposed_max_k={proposed_max_k}")
-    labels = _cluster_images(features_scaled, k=k, max_k=proposed_max_k)
+        print(f"DEBUG: group_similar_images_by_lighting - n_samples={n_samples}, proposed_max_k={proposed_max_k}")
+    
+    # Cluster images with improved algorithm
+    labels = _cluster_images(features_scaled, k=k, max_k=proposed_max_k, n_runs=5)
     
     # Group images by cluster
     n_clusters = len(np.unique(labels))
