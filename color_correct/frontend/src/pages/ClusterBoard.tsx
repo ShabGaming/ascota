@@ -540,8 +540,8 @@ function ClusterBoard({
                   <Slider
                     value={reclusterSensitivity}
                     onChange={(val) => setReclusterSensitivity(val)}
-                    min={0.2}
-                    max={1.5}
+                    min={0.1}
+                    max={5.0}
                     step={0.1}
                     colorScheme="brand"
                     flex="1"

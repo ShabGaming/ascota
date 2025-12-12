@@ -41,6 +41,8 @@ import {
   Td,
   TableContainer,
   Code,
+  Link,
+  Divider,
 } from '@chakra-ui/react'
 import { AddIcon, DeleteIcon, WarningIcon } from '@chakra-ui/icons'
 import { createSession, listSessions, restoreSession, SessionInfo, deleteSession, checkContextStatus } from '../api/client'
@@ -55,8 +57,6 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
   const [contexts, setContexts] = useState<string[]>([])
   const [currentPath, setCurrentPath] = useState('')
   const [overwrite, setOverwrite] = useState(false)
-  const [useCustomK, setUseCustomK] = useState(false)
-  const [customK, setCustomK] = useState(3)
   const [sensitivity, setSensitivity] = useState(1.0)
   const [previewResolution, setPreviewResolution] = useState(1500)
   const [isLoading, setIsLoading] = useState(false)
@@ -204,7 +204,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
         options: {
           image_source: "raw_mode", // Always use RAW mode
           overwrite,
-          custom_k: useCustomK ? customK : undefined,
+          custom_k: undefined,
           sensitivity,
           preview_resolution: previewResolution,
         },
@@ -344,33 +344,6 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                 />
               </FormControl>
               
-              <FormControl display="flex" alignItems="center">
-                <FormLabel mb={0}>Override number of clusters</FormLabel>
-                <Switch
-                  isChecked={useCustomK}
-                  onChange={(e) => setUseCustomK(e.target.checked)}
-                  colorScheme="brand"
-                />
-              </FormControl>
-              
-              {useCustomK && (
-                <FormControl>
-                  <FormLabel>Number of clusters (K)</FormLabel>
-                  <NumberInput
-                    value={customK}
-                    onChange={(_, val) => setCustomK(val)}
-                    min={1}
-                    max={20}
-                  >
-                    <NumberInputField />
-                    <NumberInputStepper>
-                      <NumberIncrementStepper />
-                      <NumberDecrementStepper />
-                    </NumberInputStepper>
-                  </NumberInput>
-                </FormControl>
-              )}
-              
               <FormControl>
                 <FormLabel>
                   Clustering Sensitivity: {sensitivity.toFixed(1)}
@@ -378,8 +351,8 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                 <Slider
                   value={sensitivity}
                   onChange={(val) => setSensitivity(val)}
-                  min={0.2}
-                  max={1.5}
+                  min={0.1}
+                  max={5.0}
                   step={0.1}
                   colorScheme="brand"
                 >
@@ -389,7 +362,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                   <SliderThumb />
                 </Slider>
                 <Text fontSize="sm" color="gray.600" mt={1}>
-                  Higher values create more clusters for finer distinctions
+                  Range: 0.1-5.0. Higher values create more clusters for finer distinctions
                 </Text>
               </FormControl>
             </VStack>
@@ -470,6 +443,56 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
             </TabPanel>
           </TabPanels>
         </Tabs>
+        
+        {/* Footer */}
+        <Box mt={8} pt={6} borderTop="1px" borderColor="gray.200">
+          <VStack spacing={3}>
+            <Text fontSize="sm" color="gray.600" textAlign="center">
+              ASCOTA Color Correction | APSAP
+            </Text>
+            <HStack spacing={4} justify="center" flexWrap="wrap">
+              <Link
+                href="https://github.com/ShabGaming/ascota"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                Repository
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://github.com/shabGaming/"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                GitHub
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://shahabai.com"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                Website
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://www.linkedin.com/in/shahabai/"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                LinkedIn
+              </Link>
+            </HStack>
+          </VStack>
+        </Box>
       </VStack>
     </Container>
   )
