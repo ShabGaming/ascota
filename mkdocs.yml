@@ -63,6 +63,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Apps (Streamlit): apps.md
+  - Color Correction App: color_correction_app.md
   - API Reference:
       - ascota_core:
           - Overview: api/ascota_core/index.md

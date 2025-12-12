@@ -17,7 +17,7 @@
 
 ASCOTA is organized into **three phases**, with modular Python packages and tools for each stage:
 
-### 1. 📌 Phase 1 — Core Image Processing (✅ Completed)
+### 1. Core Image Processing
 - **Module:** `ascota_core`  
 - **Purpose:** Standardize and prepare raw excavation images.  
 - **Functions:**  
@@ -31,7 +31,8 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
 
 ---
 
-### 2. 📌 Phase 2 — Classification & Labeling (🚧 In Progress)
+### 2. Classification & Labeling
+- **Module:** `ascota_classification` 
 - **Goal:** Automatically classify and label pottery sherds.  
 - **Techniques:**  
   - Deep learning neural networks  
@@ -45,11 +46,11 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
 
 ---
 
-### 3. 📌 Phase 3 — End-to-End Automation & UI (🗓️ Planned)
-- **Goal:** Deliver an accessible tool for archaeologists and non-technical users.  
+### 3. End-to-End Automation & UI
+- **Goal:** Deliver 3 accessible tool for archaeologists and non-technical users.  
 - **Planned Outputs:**  
   - End-to-end automation scripts  
-  - A user-friendly **Streamlit-based** or desktop application  
+  - A user-friendly web-based application  
   - Generalized framework that works beyond APSAP contexts  
 
 ---
@@ -59,9 +60,9 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
 ```
 ASCOTA/
 ├─ src/                     # Core source code
-│  ├─ ascota_core/          # Phase 1: segmentation, color, scale modules
-│  ├─ ascota_classification/ # (planned) Phase 2: classification models
-│  └─ ascota_ui/            # (planned) user interface and apps
+│  ├─ ascota_core/          # segmentation, color, scale modules
+│  └─ascota_classification/ # classification models
+├─ color_correct/           # user application for clustering & color correction
 ├─ tests/                   # Unit tests, sample data & Streamlit demo apps
 ├─ docs/                    # MkDocs + Material documentation site
 ├─ README.md                # Project overview (this file)
