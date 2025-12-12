@@ -107,13 +107,13 @@ def _run_clustering_job(session_id: str, job_id: str, new_sensitivity: float = N
 async def cluster_session(
     session_id: str,
     background_tasks: BackgroundTasks,
-    sensitivity: Optional[float] = Query(None, description="Optional sensitivity value for reclustering")
+    sensitivity: Optional[float] = Query(None, ge=0.1, le=5.0, description="Optional sensitivity value for reclustering (0.1-5.0, higher values create more clusters)")
 ):
     """Start clustering for a session.
     
     Args:
         session_id: Session ID
-        sensitivity: Optional new sensitivity value for reclustering
+        sensitivity: Optional new sensitivity value for reclustering (0.1-5.0)
     """
     store = get_session_store()
     session = store.get_session(session_id)

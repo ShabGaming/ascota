@@ -26,7 +26,7 @@ class SessionOptions(BaseModel):
     image_source: ImageSourceMode = Field(ImageSourceMode.PROXY_3000, description="Primary image source with fallback")
     overwrite: bool = Field(False, description="Overwrite existing files if True")
     custom_k: Optional[int] = Field(None, description="Number of clusters (auto-detect if None)")
-    sensitivity: float = Field(1.0, description="Clustering sensitivity")
+    sensitivity: float = Field(1.0, ge=0.1, le=5.0, description="Clustering sensitivity (0.1-5.0, higher values create more clusters)")
     preview_resolution: int = Field(1500, description="Preview resolution width in pixels (450, 1500, or 3000)")
 
 
