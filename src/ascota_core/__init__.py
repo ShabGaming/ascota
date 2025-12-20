@@ -7,15 +7,9 @@ techniques and machine learning models.
 """
 
 from .imaging import (
-    TemplateMatcher,
-    CardDetector,
-    detect_card_type,
-    create_card_masks_and_transparent,
-    mask_out_cards,
-    process_image_pipeline,
-    setup_rmbg_pipeline,
-    remove_background_and_generate_mask,
-    extract_rectangular_region,
+    detect_color_cards,
+    remove_background_mask,
+    generate_swatch
 )
 
 from .utils import (
@@ -53,6 +47,15 @@ __all__ = [
     # RMBG integration
     "setup_rmbg_pipeline",
     "remove_background_and_generate_mask",
+    
+    # YOLOv8 color card detection
+    "detect_color_cards",
+    
+    # RMBG background removal
+    "remove_background_mask",
+    
+    # Swatch generation
+    "generate_swatch",
     
     # Utility functions
     "load_image_any",
