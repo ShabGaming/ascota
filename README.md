@@ -27,7 +27,7 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
   - Surface area estimation of sherds  
   - Generate swatch images from segmented sherds
 
-➡ Outputs: clean, standardized, and calibrated images ready for classification.
+Outputs clean, standardized, and calibrated images ready for classification.
 
 ---
 
@@ -61,7 +61,7 @@ ASCOTA is organized into **three phases**, with modular Python packages and tool
 ASCOTA/
 ├─ src/                     # Core source code
 │  ├─ ascota_core/          # segmentation, color, scale modules
-│  └─ascota_classification/ # classification models
+│  └─ ascota_classification/ # classification models
 ├─ color_correct/           # user application for clustering & color correction
 ├─ tests/                   # Unit tests, sample data & Streamlit demo apps
 ├─ docs/                    # MkDocs + Material documentation site

@@ -182,7 +182,7 @@ def find_circle_centers_8_hybrid_card(image: np.ndarray, debug: bool = False) ->
     Returns:
         Tuple of (centers, debug_image) where:
         - centers: NumPy array of shape (3, 2) with (x, y) center coordinates,
-          or None if detection fails
+        or None if detection fails
         - debug_image: PIL Image with visualization, or None if debug=False
     """
     
