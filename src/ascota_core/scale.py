@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw
 from typing import Tuple, Optional, Union, List, Any
 import math
 
-def calculate_pp_cm_checker_cm(image: np.ndarray, debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
+def calculate_pp_cm_checker_card(image: np.ndarray, debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
     """Calculate pixels per cm from checkerboard pattern squares.
     
     Analyzes a checkerboard image to detect white squares and calculate the
@@ -22,7 +22,7 @@ def calculate_pp_cm_checker_cm(image: np.ndarray, debug: bool = False) -> Tuple[
         Tuple of (pixels_per_cm, debug_image). The debug_image is None if
         debug=False, otherwise contains visualization of detected squares.
     """
-    def _calculate_checker_square_area_checker_cm(image: np.ndarray, debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
+    def _calculate_checker_square_area_checker_card(image: np.ndarray, debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
         """
         Calculate the average area of 'white' squares in a checker/card style image (Only works for checker_ppi styled images).
         White squares are identified by higher mean gray intensity inside the quad
@@ -157,52 +157,208 @@ def calculate_pp_cm_checker_cm(image: np.ndarray, debug: bool = False) -> Tuple[
 
         return avg_area, debug_image
 
-    pixels_per_cm, debug_image = _calculate_checker_square_area_checker_cm(image, debug=debug)
+    pixels_per_cm, debug_image = _calculate_checker_square_area_checker_card(image, debug=debug)
 
     pp_cm = np.sqrt(pixels_per_cm)
     if debug:
-        print(f'DEBUG: "calculate_pp_cm_checker_cm" - Raw value: {pixels_per_cm} | calculate_pp_cm_checker_cm')
+        print(f'DEBUG: "calculate_pp_cm_checker_card" - Raw value: {pixels_per_cm} | calculate_pp_cm_checker_card')
     # Round to nearest 10 (if 5 or more round up else round down)
     pp_cm = math.floor(pp_cm / 10) * 10 if pp_cm % 10 < 5 else math.ceil(pp_cm / 10) * 10
 
     return pp_cm, debug_image
 
-def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
-    """Calculate pixels per cm from ColorChecker 8 card reference points.
+def find_circle_centers_8_hybrid_card(image: np.ndarray, debug: bool = False) -> Tuple[Optional[np.ndarray], Optional[Image.Image]]:
+    """Find the center points of three circles on an '8 hybrid card'.
     
     Detects three circular reference points on a ColorChecker 8 card that form
-    a 50mm x 20mm rectangle and calculates the pixels-per-centimeter scale factor.
-    The reference points should form a right triangle with specific dimensional
-    relationships.
+    a 50mm x 20mm rectangle. Returns the center coordinates of these circles,
+    which can be used for manual correction if automatic detection fails.
     
     Args:
         image: Input BGR image as numpy array.
         debug: If True, return debug visualization showing detected circles
-            and selected reference points.
+            and selected reference points with center markers.
             
     Returns:
-        Tuple of (pixels_per_cm, debug_image). Returns 0.0 for pixels_per_cm
-        if detection fails. Debug_image is None if debug=False.
+        Tuple of (centers, debug_image) where:
+        - centers: NumPy array of shape (3, 2) with (x, y) center coordinates,
+          or None if detection fails
+        - debug_image: PIL Image with visualization, or None if debug=False
     """
-
-    def find_circles(gray: np.ndarray) -> np.ndarray:
-        # Contrast normalize + light blur helps Hough
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        g = clahe.apply(gray)
-        g = cv2.GaussianBlur(g, (5, 5), 0)
-
+    
+    def _validate_circle(gray: np.ndarray, cx: int, cy: int, r: int) -> bool:
+        """Validate that a detected circle is actually a good circular target."""
         H, W = gray.shape[:2]
-        minR = max(6, int(0.012 * min(H, W)))           # scale with image size
-        maxR = max(minR + 1, int(0.06 * min(H, W)))     # exclude very large circles
-
-        circles = cv2.HoughCircles(
-            g, cv2.HOUGH_GRADIENT, dp=1.2, minDist=int(0.08 * min(H, W)),
-            param1=120, param2=25, minRadius=minR, maxRadius=maxR
-        )
-        if circles is None:
-            return np.zeros((0, 3), dtype=np.float32)
-        return circles[0].astype(np.float32)  # shape (N, 3) columns x,y,r
-
+        
+        # Check bounds
+        if cx - r < 0 or cx + r >= W or cy - r < 0 or cy + r >= H:
+            return False
+        
+        if r < 3:
+            return False
+        
+        # Extract ROI
+        x1, y1 = max(0, cx - r - 2), max(0, cy - r - 2)
+        x2, y2 = min(W, cx + r + 2), min(H, cy + r + 2)
+        roi = gray[y1:y2, x1:x2]
+        
+        if roi.size == 0:
+            return False
+        
+        # Create circular mask
+        center_x, center_y = cx - x1, cy - y1
+        Y, X = np.ogrid[:roi.shape[0], :roi.shape[1]]
+        dist_from_center = np.sqrt((X - center_x)**2 + (Y - center_y)**2)
+        
+        # Check edge strength at circle boundary
+        edge_mask = (np.abs(dist_from_center - r) < 2).astype(np.uint8)
+        if np.sum(edge_mask) < r * 2:  # Need sufficient edge pixels
+            return False
+        
+        edge_pixels = roi[edge_mask > 0]
+        if len(edge_pixels) == 0:
+            return False
+        
+        # Edge should have good contrast (high variance or strong gradient)
+        edge_variance = np.var(edge_pixels)
+        edge_mean = np.mean(edge_pixels)
+        
+        # Check inside vs outside contrast
+        inside_mask = (dist_from_center < r * 0.7).astype(np.uint8)
+        outside_mask = ((dist_from_center > r * 1.3) & (dist_from_center < r * 2.0)).astype(np.uint8)
+        
+        if np.sum(inside_mask) > 0 and np.sum(outside_mask) > 0:
+            inside_mean = np.mean(roi[inside_mask > 0])
+            outside_mean = np.mean(roi[outside_mask > 0])
+            contrast = abs(inside_mean - outside_mean)
+            
+            # Good circle should have reasonable contrast and edge strength
+            if contrast > 20 and edge_variance > 100:
+                return True
+        
+        return False
+    
+    def find_circles_robust(gray: np.ndarray) -> np.ndarray:
+        """Find circles using improved preprocessing and filtering."""
+        H, W = gray.shape[:2]
+        img_diag = math.sqrt(H * H + W * W)
+        
+        # Estimate circle radius based on image size (targets are typically 2-5% of image diagonal)
+        minR = max(5, int(0.015 * img_diag))
+        maxR = max(minR + 1, int(0.05 * img_diag))
+        minDist = int(0.10 * min(H, W))  # Minimum distance between circle centers
+        
+        all_circles = []
+        
+        # Strategy 1: Use Canny edge detection with HoughCircles (most accurate)
+        for clip_limit in [2.0, 3.0]:
+            clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(8, 8))
+            g_eq = clahe.apply(gray)
+            
+            # Light blur to reduce noise
+            g_blur = cv2.GaussianBlur(g_eq, (5, 5), 0)
+            
+            # Canny edge detection for better circle detection
+            edges = cv2.Canny(g_blur, 50, 150)
+            
+            # Try HoughCircles with different parameters
+            for param2 in [20, 25, 30, 35]:
+                circles = cv2.HoughCircles(
+                    edges, cv2.HOUGH_GRADIENT,
+                    dp=1,
+                    minDist=minDist,
+                    param1=100,  # Upper threshold for Canny
+                    param2=param2,  # Accumulator threshold (lower = more circles)
+                    minRadius=minR,
+                    maxRadius=maxR
+                )
+                
+                if circles is not None:
+                    circles_float = circles[0].astype(np.float32)
+                    for x, y, r in circles_float:
+                        # Validate circle quality
+                        if _validate_circle(gray, int(x), int(y), int(r)):
+                            all_circles.append([x, y, r])
+        
+        # Strategy 2: Direct HoughCircles on enhanced grayscale (fallback)
+        if len(all_circles) < 3:
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            g_eq = clahe.apply(gray)
+            g_blur = cv2.GaussianBlur(g_eq, (5, 5), 0)
+            
+            for param2 in [25, 30, 35]:
+                circles = cv2.HoughCircles(
+                    g_blur, cv2.HOUGH_GRADIENT,
+                    dp=1,
+                    minDist=minDist,
+                    param1=100,
+                    param2=param2,
+                    minRadius=minR,
+                    maxRadius=maxR
+                )
+                
+                if circles is not None:
+                    circles_float = circles[0].astype(np.float32)
+                    for x, y, r in circles_float:
+                        if _validate_circle(gray, int(x), int(y), int(r)):
+                            all_circles.append([x, y, r])
+        
+        # Strategy 3: Try inverted image (for light circles on dark background)
+        if len(all_circles) < 3:
+            gray_inv = cv2.bitwise_not(gray)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            g_eq = clahe.apply(gray_inv)
+            g_blur = cv2.GaussianBlur(g_eq, (5, 5), 0)
+            edges = cv2.Canny(g_blur, 50, 150)
+            
+            circles = cv2.HoughCircles(
+                edges, cv2.HOUGH_GRADIENT,
+                dp=1,
+                minDist=minDist,
+                param1=100,
+                param2=25,
+                minRadius=minR,
+                maxRadius=maxR
+            )
+            
+            if circles is not None:
+                circles_float = circles[0].astype(np.float32)
+                for x, y, r in circles_float:
+                    if _validate_circle(gray, int(x), int(y), int(r)):
+                        all_circles.append([x, y, r])
+        
+        # Remove duplicates and merge similar circles
+        if len(all_circles) > 0:
+            circles_array = np.array(all_circles, dtype=np.float32)
+            unique_circles = []
+            used = set()
+            
+            # Sort by radius (prefer medium-sized circles)
+            radii = circles_array[:, 2]
+            sorted_indices = np.argsort(np.abs(radii - np.median(radii)))
+            
+            for idx in sorted_indices:
+                if idx in used:
+                    continue
+                
+                x, y, r = circles_array[idx]
+                unique_circles.append([x, y, r])
+                used.add(idx)
+                
+                # Mark nearby circles as duplicates
+                for j in range(len(circles_array)):
+                    if j in used:
+                        continue
+                    x2, y2, r2 = circles_array[j]
+                    dist = np.sqrt((x - x2)**2 + (y - y2)**2)
+                    # If centers are very close and radii are similar, merge them
+                    if dist < max(r, r2) * 0.3 and abs(r - r2) < max(r, r2) * 0.2:
+                        used.add(j)
+            
+            return np.array(unique_circles, dtype=np.float32) if unique_circles else np.zeros((0, 3), dtype=np.float32)
+        
+        return np.zeros((0, 3), dtype=np.float32)
+    
     def select_three_by_geometry(circles: np.ndarray) -> Optional[np.ndarray]:
         """Select three circles that best match the expected geometry.
         
@@ -210,10 +366,9 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
             circles: Array of detected circles with shape (N, 3) for (x, y, radius).
             
         Returns:
-            Array of shape (3, 3) for the best three circles, or None if no
+            Array of shape (3, 2) for the best three circle centers, or None if no
             suitable triplet is found.
         """
-        # Need at least 3 candidates
         n = len(circles)
         if n < 3:
             return None
@@ -221,7 +376,7 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
         best = None
         best_err = 1e9
         ratio_ms = 2.5                 # width/height = 50mm / 20mm
-        ratio_lm = math.sqrt(29) / 5   # diag/width
+        ratio_lm = math.sqrt(29) / 5   # diag/width = sqrt(29)/5 ≈ 1.077
 
         # Try every triplet (N is small after Hough)
         for i in range(n - 2):
@@ -229,11 +384,12 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
                 for k in range(j + 1, n):
                     P = circles[[i, j, k], :3]  # (x, y, r)
 
-                    # Radii of the three should be similar
+                    # Radii of the three should be similar (within 20% of median)
                     r_med = np.median(P[:, 2])
                     if r_med <= 0:
                         continue
-                    if np.max(np.abs(P[:, 2] - r_med)) / r_med > 0.25:
+                    r_variation = np.max(np.abs(P[:, 2] - r_med)) / r_med
+                    if r_variation > 0.20:  # Stricter: was 0.25
                         continue
 
                     # Pairwise center distances
@@ -244,15 +400,24 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
                         np.linalg.norm(C[0] - C[2]),
                     ])
                     d.sort()
-                    s, m, l = d  # s=height(2cm), m=width(5cm), l=diag(sqrt(29)cm)
-                    if s < 1 or m < 1:
+                    s, m, l = d  # s≈2cm, m≈5cm, l≈sqrt(29)≈5.385cm
+                    
+                    if s < 1 or m < 1 or l < 1:
+                        continue
+                    
+                    # Ensure reasonable size relationships (s < m < l)
+                    if not (s < m < l):
                         continue
 
-                    # Check expected ratios
-                    e1 = abs(m / s - ratio_ms) / ratio_ms
-                    e2 = abs(l / m - ratio_lm) / ratio_lm
+                    # Check expected ratios with tighter tolerances
+                    e1 = abs(m / s - ratio_ms) / ratio_ms  # width/height error
+                    e2 = abs(l / m - ratio_lm) / ratio_lm   # diag/width error
+                    
+                    # Reject if ratios are too far off (more than 30% error)
+                    if e1 > 0.30 or e2 > 0.30:
+                        continue
 
-                    # Encourage near-right angle (approx) at the corner where height & width meet
+                    # Find the right angle (should be close to 90 degrees)
                     angles = []
                     for t in range(3):
                         v1 = C[(t + 1) % 3] - C[t]
@@ -260,41 +425,110 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
                         den = (np.linalg.norm(v1) * np.linalg.norm(v2)) + 1e-9
                         cosang = float(np.clip(np.dot(v1, v2) / den, -1.0, 1.0))
                         angles.append(math.degrees(math.acos(cosang)))
+                    
+                    # Find the angle closest to 90 degrees
                     ang_err = min(abs(a - 90) for a in angles)
+                    
+                    # Reject if no angle is reasonably close to 90 degrees (within 25 degrees)
+                    if ang_err > 25:
+                        continue
 
-                    err = e1 + e2 + 0.01 * ang_err
+                    # Combined error (weighted)
+                    err = e1 + e2 + 0.02 * ang_err
+                    
                     if err < best_err:
                         best_err = err
-                        best = P
-        return best
+                        best = C.copy()  # Return only centers, not full circle data
+
+        # Only return if error is acceptable (within 20% total error)
+        if best is not None and best_err < 0.20:
+            return best
+        
+        return None
 
     # --- preprocess ---
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
 
-    # Try both polarities (just in case)
-    circles = find_circles(gray)
+    # Try both polarities
+    circles = find_circles_robust(gray)
     if len(circles) == 0:
-        circles = find_circles(cv2.bitwise_not(gray))
+        circles = find_circles_robust(cv2.bitwise_not(gray))
 
-    chosen = select_three_by_geometry(circles)
+    chosen_centers = select_three_by_geometry(circles)
     debug_img = None
-    if chosen is None:
-        if debug:
-            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.ndim == 3 else \
-                  cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
-            pil = Image.fromarray(rgb)
-            d = ImageDraw.Draw(pil)
-            for x, y, r in circles:
-                d.ellipse([x - r, y - r, x + r, y + r], outline="orange", width=2)
-            debug_img = pil
-        return 0.0, debug_img
+    
+    if debug:
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.ndim == 3 else \
+              cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb)
+        draw = ImageDraw.Draw(pil)
+        
+        # Draw all detected circle candidates with center points
+        for x, y, r in circles:
+            # Draw circle outline
+            draw.ellipse([x - r, y - r, x + r, y + r], outline="#88FFFF", width=1)
+            # Draw center point with crosshairs
+            size = max(5, int(r * 0.2))
+            draw.line([x - size, y, x + size, y], fill="#88FFFF", width=2)
+            draw.line([x, y - size, x, y + size], fill="#88FFFF", width=2)
+            # Small filled circle at center
+            draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill="#88FFFF")
+        
+        # Highlight the selected triplet with prominent markers
+        if chosen_centers is not None:
+            for i, (x, y) in enumerate(chosen_centers):
+                # Find corresponding circle for radius
+                r = 10  # Default if not found
+                for cx, cy, cr in circles:
+                    if abs(cx - x) < 1 and abs(cy - y) < 1:
+                        r = cr
+                        break
+                
+                # Draw circle outline
+                draw.ellipse([x - r, y - r, x + r, y + r], outline="lime", width=3)
+                # Draw prominent center crosshairs
+                size = max(8, int(r * 0.3))
+                draw.line([x - size, y, x + size, y], fill="red", width=3)
+                draw.line([x, y - size, x, y + size], fill="red", width=3)
+                # Filled circle at center
+                draw.ellipse([x - 4, y - 4, x + 4, y + 4], fill="red")
+                # Label with coordinates
+                label = f"({int(x)}, {int(y)})"
+                draw.text((int(x) + 5, int(y) - 10), label, fill="yellow")
+        
+        debug_img = pil
+    
+    return chosen_centers, debug_img
 
+def calculate_pp_cm_from_centers(centers: np.ndarray, image: Optional[np.ndarray] = None, 
+                                  debug: bool = False) -> Tuple[float, Optional[Image.Image]]:
+    """Calculate pixels per cm from center points of three circles.
+    
+    Takes the center coordinates of three circles from an 8 hybrid card and
+    calculates the pixels-per-centimeter scale factor based on the expected
+    geometry (50mm x 20mm rectangle).
+    
+    Args:
+        centers: NumPy array of shape (3, 2) with (x, y) center coordinates.
+        image: Optional image for debug visualization. If None and debug=True,
+            visualization will be minimal.
+        debug: If True, return debug visualization showing the calculation.
+            
+    Returns:
+        Tuple of (pixels_per_cm, debug_image). Returns 0.0 for pixels_per_cm
+        if calculation fails. Debug_image is None if debug=False.
+        
+    Raises:
+        ValueError: If centers array has incorrect shape.
+    """
+    if centers is None or centers.shape != (3, 2):
+        raise ValueError("centers must be a numpy array of shape (3, 2)")
+    
     # Compute px/cm from width, height, and diagonal; robust aggregate via median
-    C = chosen[:, :2]
     dists = np.array([
-        np.linalg.norm(C[0] - C[1]),
-        np.linalg.norm(C[1] - C[2]),
-        np.linalg.norm(C[0] - C[2]),
+        np.linalg.norm(centers[0] - centers[1]),
+        np.linalg.norm(centers[1] - centers[2]),
+        np.linalg.norm(centers[0] - centers[2]),
     ])
     s, m, l = np.sort(dists)                # s≈2cm, m≈5cm, l≈sqrt(29)≈5.385cm
     px_per_cm_candidates = np.array([
@@ -303,157 +537,122 @@ def calculate_pp_cm_colorchecker8(image: np.ndarray, debug: bool = False) -> Tup
         l / math.sqrt(29.0)
     ])
     px_per_cm = float(np.median(px_per_cm_candidates))
-
-    if debug:
+    
+    debug_img = None
+    if debug and image is not None:
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB) if image.ndim == 3 else \
               cv2.cvtColor(cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
         pil = Image.fromarray(rgb)
         draw = ImageDraw.Draw(pil)
-        # Lightly draw all circle candidates
-        for x, y, r in circles:
-            draw.ellipse([x - r, y - r, x + r, y + r], outline="#88FFFF", width=1)
-        # Highlight the selected triplet
-        for x, y, r in chosen:
-            draw.ellipse([x - r, y - r, x + r, y + r], outline="lime", width=3)
-            draw.ellipse([x - 2, y - 2, x + 2, y + 2], fill="red")
+        
+        # Draw the three centers with connecting lines
+        for i, (x, y) in enumerate(centers):
+            # Draw center point
+            draw.ellipse([x - 5, y - 5, x + 5, y + 5], fill="lime", outline="red", width=2)
+            # Draw crosshairs
+            draw.line([x - 10, y, x + 10, y], fill="red", width=2)
+            draw.line([x, y - 10, x, y + 10], fill="red", width=2)
+            # Label
+            label = f"P{i+1}"
+            draw.text((int(x) + 8, int(y) - 15), label, fill="yellow")
+        
+        # Draw connecting lines
+        for i in range(3):
+            x1, y1 = centers[i]
+            x2, y2 = centers[(i + 1) % 3]
+            draw.line([(x1, y1), (x2, y2)], fill="cyan", width=2)
+        
         # Label px/cm
         label = f"px/cm ~ {px_per_cm:.2f}"
         w = 8 * len(label)
         draw.rectangle([10, 10, 10 + w, 35], fill=(0, 0, 0, 150))
         draw.text((14, 14), label, fill="white")
+        
         debug_img = pil
-
+    
     if debug:
-        print(f'DEBUG: "calculate_pp_cm_colorchecker8" - Raw value: {px_per_cm} | calculate_pp_cm_colorchecker8')
+        print(f'DEBUG: "calculate_pp_cm_from_centers" - Raw value: {px_per_cm} | calculate_pp_cm_from_centers')
+    
     # Round to nearest 10 (if 5 or more round up else round down)
     px_per_cm = math.floor(px_per_cm / 10) * 10 if px_per_cm % 10 < 5 else math.ceil(px_per_cm / 10) * 10
 
     return px_per_cm, debug_img
 
-def artifact_face_size(img: Union[np.ndarray, Image.Image], card_img: np.ndarray, 
-                      card_type: str, debug: bool = False) -> float:
-    """Calculate the face area of an artifact using a reference card for scale.
+def artifact_face_size(binary_mask: Union[np.ndarray, Image.Image], pixels_per_cm: float, 
+                      debug: bool = False) -> float:
+    """Calculate the face area of an artifact from a binary mask using a scale factor.
     
-    Determines the area of an artifact image by counting non-transparent pixels
-    and converting to square centimeters using a reference card for scale calibration.
-    Handles both PIL Images and numpy arrays with various channel configurations.
+    Determines the area of an artifact by counting foreground pixels in a binary mask
+    and converting to square centimeters using the provided pixels-per-centimeter scale factor.
     
     Args:
-        img: Artifact image with transparent background. Can be PIL Image or
-            numpy array. For arrays, supports RGBA (4-channel), RGB (3-channel),
-            or grayscale (2D) formats.
-        card_img: Reference card image as numpy array for scale calculation.
-        card_type: Type of reference card used for scale. Must be either
-            'colorchecker8' or 'checker_cm'.
+        binary_mask: Binary mask image where foreground pixels are non-zero.
+            Can be PIL Image or numpy array. Supports:
+            - Binary mask (0/1 or 0/255): Foreground pixels are non-zero
+            - Grayscale: Foreground pixels are non-zero
+            The mask should be a clean binary mask from imaging.py's remove_background_mask.
+        pixels_per_cm: Scale factor in pixels per centimeter. Must be > 0.
         debug: If True, print detailed debug information about processing steps.
         
     Returns:
         Face area of the artifact in square centimeters (cm²).
         
     Raises:
-        ValueError: If card_type is invalid, scale cannot be determined from
-            the reference card, or if image format is unsupported.
+        ValueError: If pixels_per_cm is invalid or mask format is unsupported.
     """
-    if card_type == 'colorchecker8':
-        pp_cm, _ = calculate_pp_cm_colorchecker8(card_img, debug=False)
-    elif card_type == 'checker_cm':
-        pp_cm, _ = calculate_pp_cm_checker_cm(card_img, debug=False)
-    else:
-        raise ValueError(f"Invalid card type: {card_type}")
-
-    # Ensure we have a valid pixels per cm value
-    if pp_cm <= 0:
-        raise ValueError("Could not determine scale from reference card")
+    # Validate pixels_per_cm
+    if pixels_per_cm <= 0:
+        raise ValueError(f"pixels_per_cm must be > 0, got {pixels_per_cm}")
 
     # Convert PIL Image to numpy array if needed
-    if hasattr(img, 'convert'):  # PIL Image
-        img_array = np.array(img)
+    if hasattr(binary_mask, 'convert'):  # PIL Image
+        mask_array = np.array(binary_mask)
         if debug:
-            print(f'DEBUG: "artifact_face_size" - Converted PIL Image to numpy array, shape: {img_array.shape}, ndim: {img_array.ndim}')
+            print(f'DEBUG: "artifact_face_size" - Converted PIL Image to numpy array, shape: {mask_array.shape}')
     else:
-        img_array = img  # Already numpy array
+        mask_array = binary_mask  # Already numpy array
         if debug:
-            print(f'DEBUG: "artifact_face_size" - Using existing numpy array, shape: {img_array.shape}, ndim: {img_array.ndim}')
+            print(f'DEBUG: "artifact_face_size" - Using existing numpy array, shape: {mask_array.shape}')
     
-    # Handle transparent background: create binary mask for artifact pixels
-    if img_array.ndim == 3 and img_array.shape[2] == 4:
-        # RGBA image, use alpha channel as mask
-        if debug:
-            print('DEBUG: "artifact_face_size" - Using RGBA branch (4 channels)')
-        alpha = img_array[:, :, 3]
-        if debug:
-            print(f'DEBUG: "artifact_face_size" - Alpha channel stats - min: {alpha.min()}, max: {alpha.max()}, mean: {alpha.mean():.2f}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 0 pixels: {np.sum(alpha > 0)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 128 pixels: {np.sum(alpha > 128)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 200 pixels: {np.sum(alpha > 200)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 240 pixels: {np.sum(alpha > 240)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha = 255 pixels: {np.sum(alpha == 255)}')
-        
-        # Try a very high threshold first, then fall back if needed
-        if np.sum(alpha > 240) > 0:
-            mask = (alpha > 240).astype(np.uint8)  # Very strict threshold
+    # Ensure mask is 2D (grayscale/binary)
+    if mask_array.ndim == 3:
+        # Multi-channel image: convert to grayscale first
+        if mask_array.shape[2] == 4:
+            # RGBA: use alpha channel
+            mask_array = mask_array[:, :, 3]
             if debug:
-                print('DEBUG: "artifact_face_size" - Using alpha > 240 threshold')
-        elif np.sum(alpha > 200) > 0:
-            mask = (alpha > 200).astype(np.uint8)  # High threshold
+                print('DEBUG: "artifact_face_size" - Extracted alpha channel from RGBA image')
+        elif mask_array.shape[2] == 3:
+            # RGB: convert to grayscale
+            mask_array = cv2.cvtColor(mask_array, cv2.COLOR_RGB2GRAY)
             if debug:
-                print('DEBUG: "artifact_face_size" - Using alpha > 200 threshold')
+                print('DEBUG: "artifact_face_size" - Converted RGB to grayscale')
         else:
-            # If all pixels have high alpha, try using RGB content instead
-            if debug:
-                print('DEBUG: "artifact_face_size" - All pixels have high alpha, using RGB content for mask')
-            rgb = img_array[:, :, :3]
-            # Create mask based on RGB content - assume black/transparent areas are background
-            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-            mask = (gray > 30).astype(np.uint8)  # Pixels brighter than 30
-    elif img_array.ndim == 3 and img_array.shape[2] == 3:
-        # RGB image, treat all nonzero as artifact (legacy fallback)
-        if debug:
-            print('DEBUG: "artifact_face_size" - Using RGB branch (3 channels)')
-        mask = (np.any(img_array > 0, axis=2)).astype(np.uint8)
-    elif img_array.ndim == 2:
-        # Single channel, treat nonzero as artifact
-        if debug:
-            print('DEBUG: "artifact_face_size" - Using 2D array branch (grayscale)')
-        mask = (img_array > 0).astype(np.uint8)
-    elif img_array.ndim == 4:
-        # RGBA image, use alpha channel as mask
-        alpha = img_array[:, :, 3]
-        if debug:
-            print(f'DEBUG: "artifact_face_size" - Alpha channel stats - min: {alpha.min()}, max: {alpha.max()}, mean: {alpha.mean():.2f}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 0 pixels: {np.sum(alpha > 0)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 128 pixels: {np.sum(alpha > 128)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 200 pixels: {np.sum(alpha > 200)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha > 240 pixels: {np.sum(alpha > 240)}')
-            print(f'DEBUG: "artifact_face_size" - Alpha = 255 pixels: {np.sum(alpha == 255)}')
-        
-        # Try a very high threshold first, then fall back if needed
-        if np.sum(alpha > 240) > 0:
-            mask = (alpha > 240).astype(np.uint8)  # Very strict threshold
-            if debug:
-                print('DEBUG: "artifact_face_size" - Using alpha > 240 threshold')
-        elif np.sum(alpha > 200) > 0:
-            mask = (alpha > 200).astype(np.uint8)  # High threshold
-            if debug:
-                print('DEBUG: "artifact_face_size" - Using alpha > 200 threshold')
+            raise ValueError(f"Unsupported image shape: {mask_array.shape}. Expected 2D (binary/grayscale) or 3D (RGB/RGBA).")
+    elif mask_array.ndim != 2:
+        raise ValueError(f"Unsupported image shape: {mask_array.shape}. Expected 2D (binary/grayscale) or 3D (RGB/RGBA).")
+    
+    # Create binary mask (0 or 1) - handle both 0/1 and 0/255 formats
+    if mask_array.dtype == np.uint8:
+        # Normalize to 0/1: if max is > 1, assume 0/255 format
+        if mask_array.max() > 1:
+            mask = (mask_array > 0).astype(np.uint8)
         else:
-            # If all pixels have high alpha, try using RGB content instead
-            if debug:
-                print('DEBUG: "artifact_face_size" - All pixels have high alpha, using RGB content for mask')
-            rgb = img_array[:, :, :3]
-            # Create mask based on RGB content - assume black/transparent areas are background
-            gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-            mask = (gray > 30).astype(np.uint8)  # Pixels brighter than 30
+            mask = mask_array.astype(np.uint8)
     else:
-        raise ValueError("Unsupported image shape for artifact image")
+        # For other dtypes, just check if > 0
+        mask = (mask_array > 0).astype(np.uint8)
+    
+    if debug:
+        print(f'DEBUG: "artifact_face_size" - Binary mask: {np.sum(mask > 0)} foreground pixels (out of {mask.size} total)')
             
-    # Count only the white/foreground pixels in the binary mask
+    # Count foreground pixels in the binary mask
     artifact_pixels = cv2.countNonZero(mask)
 
-    # Convert pixels to cm² using the calculated pixels per cm
-    # pp_cm is pixels per cm, so pp_cm² is pixels per cm²
+    # Convert pixels to cm² using the provided pixels per cm
+    # pixels_per_cm is pixels per cm, so pixels_per_cm² is pixels per cm²
     if debug:
-        print(f'DEBUG: "artifact_face_size" - Artifact pixels: {artifact_pixels}')
-    face_area_cm2 = artifact_pixels / (pp_cm * pp_cm)
+        print(f'DEBUG: "artifact_face_size" - Artifact pixels: {artifact_pixels}, px/cm: {pixels_per_cm:.2f}')
+    face_area_cm2 = artifact_pixels / (pixels_per_cm * pixels_per_cm)
 
     return face_area_cm2

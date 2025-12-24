@@ -24,8 +24,9 @@ from .utils import (
 )
 
 from .scale import (
-    calculate_pp_cm_checker_cm,
-    calculate_pp_cm_colorchecker8,
+    calculate_pp_cm_checker_card,
+    find_circle_centers_8_hybrid_card,
+    calculate_pp_cm_from_centers,
     artifact_face_size
 )
 
@@ -35,7 +36,6 @@ __author__ = "Muhammad Shahab Hasan"
 # Main classes and functions for easy access
 __all__ = [
     # Main classes
-    "TemplateMatcher",
     "CardDetector",
     
     # Core functions
@@ -64,7 +64,9 @@ __all__ = [
     "create_transparent_image",
     
     # Scaling functions
-    "calculate_pp_cm_checker_cm",
-    "calculate_pp_cm_colorchecker8",
+    "calculate_pp_cm_checker_card",
+    "calculate_pp_cm_8_hybrid_card",
+    "find_circle_centers_8_hybrid_card",
+    "calculate_pp_cm_from_centers",
     "artifact_face_size",
 ]
