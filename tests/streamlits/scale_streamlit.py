@@ -5,20 +5,19 @@ import sys
 import os
 import cv2
 from pathlib import Path
-import glob
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from src.ascota_core import (
-    process_image_pipeline, 
-    calculate_pp_cm_checker_cm,
-    calculate_pp_cm_colorchecker8,
-    artifact_face_size,
-    setup_rmbg_pipeline,
-    remove_background_and_generate_mask
+    detect_color_cards,
+    remove_background_mask,
+    calculate_pp_cm_checker_card,
+    find_circle_centers_8_hybrid_card,
+    calculate_pp_cm_from_centers,
+    artifact_face_size
 )
-from src.ascota_core.utils import pil_to_cv2
+from src.ascota_core.utils import pil_to_cv2, cv2_to_pil
 
 st.set_page_config(
     page_title="ASCOTA Scale Analysis",
@@ -43,35 +42,14 @@ if st.session_state.current_page == 'main':
     # Sidebar for controls
     st.sidebar.header("Configuration")
 
-    # Use all available templates
-    template_paths = [
-        "src/ascota_core/templates/colorchecker24.png",
-        "src/ascota_core/templates/checker_cm.png", 
-        "src/ascota_core/templates/colorchecker8.png"
-    ]
-
-    # Get all test images
-    def get_test_images():
-        type_a_images = glob.glob("tests/data/type_a/jpg/*.jpg")
-        type_b_images = glob.glob("tests/data/type_b/jpg/*.jpg")
-        
-        sample_images = {}
-        for img_path in sorted(type_a_images):
-            filename = os.path.basename(img_path)
-            sample_images[f"Type A - {filename}"] = img_path
-        
-        for img_path in sorted(type_b_images):
-            filename = os.path.basename(img_path)
-            sample_images[f"Type B - {filename}"] = img_path
-        
-        return sample_images
-
-    sample_images = get_test_images()
-
-    # Image selection
+    # Image upload
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**Select Test Image**")
-    selected_sample = st.sidebar.selectbox("Choose an image", ["None"] + list(sample_images.keys()))
+    st.sidebar.markdown("**Upload Image**")
+    uploaded_file = st.sidebar.file_uploader(
+        "Choose an image file",
+        type=['jpg', 'jpeg', 'png', 'bmp', 'tiff', 'tif'],
+        help="Upload an image containing color reference cards and an artifact"
+    )
 
     # Scale calculation options
     st.sidebar.markdown("---")
@@ -82,49 +60,64 @@ if st.session_state.current_page == 'main':
     # Process button
     process_btn = st.sidebar.button("🚀 Process Scale Analysis", type="primary")
 
-    # Reset results when new image is selected
-    if selected_sample != "None":
-        if 'current_image' not in st.session_state or st.session_state.current_image != selected_sample:
-            st.session_state.current_image = selected_sample
+    # Reset results when new image is uploaded
+    if uploaded_file is not None:
+        if 'uploaded_file_name' not in st.session_state or st.session_state.uploaded_file_name != uploaded_file.name:
+            st.session_state.uploaded_file_name = uploaded_file.name
             st.session_state.scale_results = None
             st.session_state.scale_processed = False
+            st.session_state.detected_cards = None
+            st.session_state.extracted_crops = None
+            st.session_state.card_types = None
 
     # Main content area
-    if process_btn and selected_sample != "None":
+    if process_btn and uploaded_file is not None:
         try:
-            # Get image path
-            image_path = sample_images[selected_sample]
-            image = Image.open(image_path)
+            # Load image from uploaded file
+            image = Image.open(uploaded_file)
+            uploaded_file.seek(0)  # Reset file pointer for potential reuse
             
             # Process the image
             with st.spinner("Processing scale analysis..."):
                 try:
-                    # Check if template files exist
-                    missing_templates = []
-                    for template_path in template_paths:
-                        if not os.path.exists(template_path):
-                            missing_templates.append(template_path)
+                    # Detect color cards using new imaging functions
+                    detected_cards = detect_color_cards(image, debug=enable_debug)
                     
-                    if missing_templates:
-                        st.warning(f"⚠️ Missing template files: {missing_templates}")
-                        template_paths = [tp for tp in template_paths if os.path.exists(tp)]
-                    
-                    if not template_paths:
-                        st.error("❌ No valid template files found!")
-                        st.stop()
-                    
-                    # First, detect cards using imaging pipeline
-                    results = process_image_pipeline(image_path, template_paths)
-                    
-                    # Process scale analysis for each detected card
+                    # Extract card crops and process scale analysis
                     scale_results = []
-                    for i, (card_type, crop) in enumerate(zip(results['card_types'], results['extracted_crops'])):
-                        if crop is not None:
-                            # Convert crop to numpy array if needed
-                            if hasattr(crop, 'shape'):  # Already numpy array
-                                card_img = crop
-                            else:  # PIL Image
-                                card_img = pil_to_cv2(crop)
+                    extracted_crops = []
+                    card_types = []
+                    
+                    # Convert image to numpy array for cropping
+                    img_array = np.array(image)
+                    if len(img_array.shape) == 3 and img_array.shape[2] == 3:
+                        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+                    else:
+                        img_bgr = img_array
+                    
+                    for i, card in enumerate(detected_cards):
+                        card_type = card['class']
+                        coordinates = np.array(card['coordinates'], dtype=np.float32)
+                        
+                        # Extract card crop using perspective transform
+                        # Get bounding box first
+                        xs = coordinates[:, 0]
+                        ys = coordinates[:, 1]
+                        x_min, x_max = int(xs.min()), int(xs.max())
+                        y_min, y_max = int(ys.min()), int(ys.max())
+                        
+                        # Ensure coordinates are within image bounds
+                        x_min = max(0, x_min)
+                        y_min = max(0, y_min)
+                        x_max = min(img_bgr.shape[1], x_max)
+                        y_max = min(img_bgr.shape[0], y_max)
+                        
+                        # Extract crop using bounding box (simple approach)
+                        # For better results, could use perspective transform, but bounding box is simpler
+                        if x_max > x_min and y_max > y_min:
+                            crop = img_bgr[y_min:y_max, x_min:x_max]
+                            extracted_crops.append(crop)
+                            card_types.append(card_type)
                             
                             scale_result = {
                                 'card_type': card_type,
@@ -135,17 +128,25 @@ if st.session_state.current_page == 'main':
                             }
                             
                             try:
-                                if card_type == 'checker_cm':
-                                    pp_cm, debug_img = calculate_pp_cm_checker_cm(card_img, debug=enable_debug)
+                                if card_type == 'checker_card':
+                                    pp_cm, debug_img = calculate_pp_cm_checker_card(crop, debug=enable_debug)
                                     scale_result['pixels_per_cm'] = pp_cm
                                     scale_result['debug_image'] = debug_img
                                     scale_result['method'] = 'Checker CM'
                                     
-                                elif card_type == 'colorchecker8':
-                                    pp_cm, debug_img = calculate_pp_cm_colorchecker8(card_img, debug=enable_debug)
-                                    scale_result['pixels_per_cm'] = pp_cm
-                                    scale_result['debug_image'] = debug_img
-                                    scale_result['method'] = 'ColorChecker 8'
+                                elif card_type == '8_hybrid_card':
+                                    # Use new two-function approach for better error handling
+                                    centers, centers_debug_img = find_circle_centers_8_hybrid_card(crop, debug=enable_debug)
+                                    if centers is None:
+                                        scale_result['error'] = "Could not detect circle centers. Try manual selection."
+                                        scale_result['debug_image'] = centers_debug_img
+                                        scale_result['method'] = 'ColorChecker 8 (Failed)'
+                                    else:
+                                        pp_cm, calc_debug_img = calculate_pp_cm_from_centers(centers, crop, debug=enable_debug)
+                                        scale_result['pixels_per_cm'] = pp_cm
+                                        # Use calculation debug image if available, otherwise use detection debug image
+                                        scale_result['debug_image'] = calc_debug_img if calc_debug_img is not None else centers_debug_img
+                                        scale_result['method'] = 'ColorChecker 8'
                                     
                                 elif card_type == 'colorchecker24':
                                     # ColorChecker 24 doesn't have scale reference, skip
@@ -162,6 +163,10 @@ if st.session_state.current_page == 'main':
                             
                             scale_results.append(scale_result)
                     
+                    # Store results in session state
+                    st.session_state.detected_cards = detected_cards
+                    st.session_state.extracted_crops = extracted_crops
+                    st.session_state.card_types = card_types
                     st.session_state.scale_results = scale_results
                     st.session_state.scale_processed = True
                     
@@ -178,17 +183,17 @@ if st.session_state.current_page == 'main':
             with col1:
                 st.subheader("📸 Input Image")
                 st.image(image, width='stretch')
-                st.caption(f"**File:** {os.path.basename(image_path)}")
+                st.caption(f"**File:** {uploaded_file.name}")
             
             with col2:
                 st.subheader("🔍 Detected Cards")
-                if results['card_types']:
-                    for i, card_type in enumerate(results['card_types']):
+                if st.session_state.get('card_types'):
+                    for i, card_type in enumerate(st.session_state.card_types):
                         if card_type == 'colorchecker24':
                             st.success(f"Card {i+1}: {card_type} (24-color reference)")
-                        elif card_type == 'colorchecker8':
+                        elif card_type == '8_hybrid_card':
                             st.info(f"Card {i+1}: {card_type} (8-color reference)")
-                        elif card_type == 'checker_cm':
+                        elif card_type == 'checker_card':
                             st.warning(f"Card {i+1}: {card_type} (scale reference)")
                         else:
                             st.error(f"Card {i+1}: {card_type} (unknown)")
@@ -196,11 +201,11 @@ if st.session_state.current_page == 'main':
                     st.warning("No color cards detected")
             
             # Card Cutouts and Scale Analysis
-            if results['extracted_crops']:
+            if st.session_state.get('extracted_crops'):
                 st.markdown("---")
                 st.subheader("✂️ Card Cutouts & Scale Analysis")
                 
-                for i, (crop, card_type) in enumerate(zip(results['extracted_crops'], results['card_types'])):
+                for i, (crop, card_type) in enumerate(zip(st.session_state.extracted_crops, st.session_state.card_types)):
                     col1, col2 = st.columns([1, 1])
                     
                     with col1:
@@ -239,53 +244,53 @@ if st.session_state.current_page == 'main':
             best_pp_cm = 0
             best_card_img = None
             
-            if st.session_state.scale_results:
+            if st.session_state.get('scale_results'):
                 for scale_result in st.session_state.scale_results:
-                    if scale_result['pixels_per_cm'] > best_pp_cm and not scale_result['error']:
+                    if scale_result['pixels_per_cm'] > best_pp_cm and not scale_result.get('error'):
                         best_pp_cm = scale_result['pixels_per_cm']
                         best_scale = scale_result
                         # Get the corresponding card image
                         card_idx = scale_result['card_index']
-                        if card_idx < len(results['extracted_crops']):
-                            best_card_img = results['extracted_crops'][card_idx]
+                        if card_idx < len(st.session_state.get('extracted_crops', [])):
+                            best_card_img = st.session_state.extracted_crops[card_idx]
             
             if best_scale and best_card_img is not None:
                 st.success(f"✅ Using scale from {best_scale['method']}: {best_pp_cm:.0f} pixels/cm")
                 
-                # Perform artifact segmentation using RMBG
+                # Perform artifact segmentation using new RMBG function
                 with st.spinner("Segmenting artifact for size calculation..."):
                     try:
-                        # Setup RMBG pipeline
-                        rmbg_pipe = setup_rmbg_pipeline()
+                        # Use remove_background_mask with detected card coordinates
+                        detected_cards = st.session_state.get('detected_cards', [])
                         
-                        # Create cropped image with color cards removed for better RMBG processing
-                        from src.ascota_core.imaging import crop_out_color_cards_for_rmbg
-                        cropped_for_rmbg = crop_out_color_cards_for_rmbg(
-                            pil_to_cv2(results['original_image']), 
-                            results['detected_polygons'], 
-                            results['card_types']
+                        # Get binary mask from remove_background_mask
+                        mask_result = remove_background_mask(
+                            image,
+                            card_coordinates=detected_cards if detected_cards else None,
+                            debug=enable_debug
                         )
                         
-                        # Create cards mask for overlap filtering
-                        cards_mask = np.zeros(results['masked_image'].size[::-1], dtype=np.uint8)
-                        for poly in results['detected_polygons']:
-                            from src.ascota_core.utils import polygon_to_mask
-                            poly_mask = polygon_to_mask(results['masked_image'].size[::-1], poly)
-                            cards_mask = cv2.bitwise_or(cards_mask, poly_mask)
+                        # Handle debug mode return (tuple) vs normal mode (just mask)
+                        if enable_debug and isinstance(mask_result, tuple):
+                            binary_mask, rmbg_image, rmbg_white_bg_image = mask_result
+                        else:
+                            binary_mask = mask_result
+                            rmbg_image = None
+                            rmbg_white_bg_image = None
                         
-                        # Apply RMBG to get segmented artifact
-                        artifact_image, artifact_mask = remove_background_and_generate_mask(
-                            results['masked_image'], 
-                            rmbg_pipe,
-                            cards_mask,
-                            cropped_for_rmbg
-                        )
+                        # Convert binary mask (0/1) to 0/255 for image creation
+                        mask_255 = (binary_mask * 255).astype(np.uint8)
                         
-                        # Calculate face area using the segmented artifact
+                        # Create transparent artifact image from mask
+                        # Convert mask to RGBA where mask=1 (foreground) is opaque
+                        artifact_image = image.convert('RGBA')
+                        mask_pil = Image.fromarray(mask_255, mode='L')
+                        artifact_image.putalpha(mask_pil)
+                        
+                        # Calculate face area using the binary mask and pixels per cm
                         face_area = artifact_face_size(
-                            artifact_image,  # Segmented artifact with alpha channel
-                            best_card_img,   # Reference card image
-                            best_scale['card_type'],  # Card type
+                            binary_mask,  # Binary mask (0/1 format)
+                            best_pp_cm,   # Pixels per cm from scale calculation
                             debug=enable_debug
                         )
                         
@@ -296,9 +301,18 @@ if st.session_state.current_page == 'main':
                             st.markdown("**Segmented Artifact**")
                             st.image(artifact_image, caption="Segmented Artifact (RGBA)", width=300)
                             
-                            if enable_debug and artifact_mask:
-                                st.markdown("**Artifact Mask**")
-                                st.image(artifact_mask, caption="Binary Mask", width=300)
+                            if enable_debug:
+                                st.markdown("**Binary Mask**")
+                                mask_display = Image.fromarray(mask_255, mode='L')
+                                st.image(mask_display, caption="Binary Mask (1=foreground, 0=background)", width=300)
+                                
+                                if rmbg_image is not None:
+                                    st.markdown("**RMBG Result**")
+                                    st.image(rmbg_image, caption="First RMBG Pass", width=300)
+                                
+                                if rmbg_white_bg_image is not None:
+                                    st.markdown("**White BG Image**")
+                                    st.image(rmbg_white_bg_image, caption="Input to Second RMBG Pass", width=300)
                         
                         with col2:
                             st.markdown("**Face Size Calculation**")
@@ -318,10 +332,15 @@ if st.session_state.current_page == 'main':
                             st.image(ref_card_pil, caption=f"Reference: {best_scale['card_type']}", width=200)
                             
                             # Download option for segmented artifact
+                            from io import BytesIO
+                            buf = BytesIO()
+                            artifact_image.save(buf, format='PNG')
+                            # Get base filename without extension for download
+                            base_name = Path(uploaded_file.name).stem
                             st.download_button(
                                 label="📥 Download Segmented Artifact",
-                                data=artifact_image.tobytes(),
-                                file_name=f"artifact_{os.path.basename(image_path)}",
+                                data=buf.getvalue(),
+                                file_name=f"artifact_{base_name}.png",
                                 mime="image/png"
                             )
                         
@@ -340,6 +359,7 @@ if st.session_state.current_page == 'main':
                     except Exception as e:
                         st.error(f"❌ Error in artifact segmentation: {str(e)}")
                         st.info("Make sure transformers and required dependencies are installed for RMBG")
+                        st.exception(e)
                         
                         # Fallback: show placeholder
                         col1, col2 = st.columns([1, 1])
@@ -350,15 +370,15 @@ if st.session_state.current_page == 'main':
                             st.markdown("**Face Size Calculation**")
                             st.warning("Artifact segmentation failed. Install RMBG dependencies to enable size calculation.")
             else:
-                st.warning("⚠️ No valid scale reference found. Need either 'checker_cm' or 'colorchecker8' card.")
+                st.warning("⚠️ No valid scale reference found. Need either 'checker_card' or '8_hybrid_card' card.")
         
         except Exception as e:
             st.error(f"❌ Error processing image: {str(e)}")
             st.exception(e)
 
     else:
-        # Welcome message when no image is selected
-        st.info("💡 **Welcome!** Select an image from the sidebar and click 'Process Scale Analysis' to run the scale detection pipeline.")
+        # Welcome message when no image is uploaded
+        st.info("💡 **Welcome!** Upload an image from the sidebar and click 'Process Scale Analysis' to run the scale detection pipeline.")
 
 # Footer
 st.markdown("---")
