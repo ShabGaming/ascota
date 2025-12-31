@@ -15,6 +15,8 @@ import {
   useToast,
   Card,
   CardBody,
+  Text,
+  Link,
 } from '@chakra-ui/react'
 import { AddIcon, DeleteIcon } from '@chakra-ui/icons'
 import { createSession } from '../api/client'
@@ -165,6 +167,56 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
         >
           Start Preprocessing
         </Button>
+        
+        {/* Footer */}
+        <Box mt={8} pt={6} borderTop="1px" borderColor="gray.200">
+          <VStack spacing={3}>
+            <Text fontSize="sm" color="gray.600" textAlign="center">
+              ASCOTA Preprocess Pipeline | APSAP
+            </Text>
+            <HStack spacing={4} justify="center" flexWrap="wrap">
+              <Link
+                href="https://github.com/ShabGaming/ascota"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                Repository
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://github.com/shabGaming/"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                GitHub
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://shahabai.com"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                Website
+              </Link>
+              <Text fontSize="sm" color="gray.400">•</Text>
+              <Link
+                href="https://www.linkedin.com/in/shahabai/"
+                isExternal
+                fontSize="sm"
+                color="blue.500"
+                _hover={{ color: 'blue.600', textDecoration: 'underline' }}
+              >
+                LinkedIn
+              </Link>
+            </HStack>
+          </VStack>
+        </Box>
       </VStack>
     </Container>
   )
