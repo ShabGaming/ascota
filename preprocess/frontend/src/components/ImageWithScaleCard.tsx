@@ -154,14 +154,15 @@ function ImageWithScaleCard({ sessionId, image, result, card, maxHeight = '200px
   }, [sessionId, image.id, result, card, maxHeight])
   
   return (
-    <Box position="relative" width="100%" bg="gray.100">
+    <Box position="relative" width="100%" bg="gray.100" display="flex" justifyContent="center" alignItems="center">
       <canvas
         ref={canvasRef}
         style={{
           display: 'block',
-          width: '100%',
-          height: 'auto',
+          maxWidth: '100%',
           maxHeight: maxHeight,
+          height: 'auto',
+          width: 'auto',
         }}
       />
     </Box>

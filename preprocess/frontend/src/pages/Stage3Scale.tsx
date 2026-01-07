@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
-  Box,
   Button,
   Container,
   Heading,
@@ -23,7 +22,6 @@ import {
   Stat,
   StatLabel,
   StatNumber,
-  StatHelpText,
 } from '@chakra-ui/react'
 import { useQuery, useMutation } from 'react-query'
 import {
@@ -31,6 +29,7 @@ import {
   getStage3Results,
   saveStage3,
   getSessionImages,
+  getStage1Results,
 } from '../api/client'
 import { useSessionStore } from '../state/session'
 import ScaleEditor from '../components/ScaleEditor'
@@ -139,7 +138,6 @@ function Stage3Scale({ sessionId, onComplete, onReset }: Stage3ScaleProps) {
   
   const handleImageClick = (imageId: string) => {
     const result = stage3Results[imageId]
-    const stage1Data = stage1Results[imageId]
     
     // Only allow editing for 8-hybrid cards
     if (result?.method === '8_hybrid_card' && !result.error) {
@@ -276,9 +274,9 @@ function Stage3Scale({ sessionId, onComplete, onReset }: Stage3ScaleProps) {
           })}
         </SimpleGrid>
         
-        <Modal isOpen={isOpen} onClose={onClose} size="xl">
+        <Modal isOpen={isOpen} onClose={onClose} size="6xl">
           <ModalOverlay />
-          <ModalContent>
+          <ModalContent maxW="90vw" maxH="90vh">
             <ModalHeader>Edit Circle Centers (8-Hybrid Card)</ModalHeader>
             <ModalCloseButton />
             <ModalBody>

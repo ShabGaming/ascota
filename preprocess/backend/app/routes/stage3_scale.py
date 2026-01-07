@@ -293,6 +293,7 @@ async def get_stage3_results(session_id: str):
                 surface_area_cm2=existing_data.get("surface_area_cm2"),
                 method=existing_data.get("method"),
                 card_used=existing_data.get("card_used"),
+                centers=existing_data.get("centers"),
                 error=existing_data.get("error")
             )
         elif image_id in session.stage3_results:
@@ -359,6 +360,7 @@ async def update_centers(
     try:
         # Convert centers to numpy array for calculation
         import numpy as np
+        import cv2
         import sys
         
         # Add project root to path
@@ -371,12 +373,36 @@ async def update_centers(
         from src.ascota_core.scale import calculate_pp_cm_from_centers
         card_array = np.array(card_crop)
         if len(card_array.shape) == 3:
-            import cv2
             card_bgr = cv2.cvtColor(card_array, cv2.COLOR_RGB2BGR)
         else:
             card_bgr = card_array
         
         pixels_per_cm, _ = calculate_pp_cm_from_centers(centers_array, card_bgr, debug=False)
+        
+        # Transform centers from card crop coordinates to original image coordinates
+        card_coords = np.array(hybrid_card.get("coordinates"), dtype=np.float32)
+        
+        # Calculate perspective transform from card crop to original image
+        # Card crop is rectangular: [0,0], [w,0], [w,h], [0,h]
+        x_coords = card_coords[:, 0]
+        y_coords = card_coords[:, 1]
+        crop_width = float(np.max(x_coords) - np.min(x_coords))
+        crop_height = float(np.max(y_coords) - np.min(y_coords))
+        
+        dst_points = np.array([
+            [0, 0],
+            [crop_width, 0],
+            [crop_width, crop_height],
+            [0, crop_height]
+        ], dtype=np.float32)
+        
+        # Get inverse perspective transform
+        M = cv2.getPerspectiveTransform(dst_points, card_coords)
+        
+        # Transform centers from crop to image coordinates
+        centers_homogeneous = np.hstack([centers_array, np.ones((centers_array.shape[0], 1))])
+        centers_transformed = (M @ centers_homogeneous.T).T
+        centers_in_image = (centers_transformed[:, :2] / centers_transformed[:, 2:3]).tolist()
         
         # Calculate surface area if mask exists
         surface_area = None
@@ -403,6 +429,7 @@ async def update_centers(
             "surface_area_cm2": surface_area,
             "method": "8_hybrid_card",
             "card_used": hybrid_card.get("card_id"),
+            "centers": centers_in_image,
             "error": None
         }
         session.updated_at = datetime.now()
