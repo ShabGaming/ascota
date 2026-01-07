@@ -535,6 +535,31 @@ async def save_stage3(session_id: str):
         if save_preprocess_json(find_path_str, existing_data):
             saved_count += 1
     
+    # Append preprocess status to context directories
+    try:
+        from app.services.metadata import append_context_status
+        
+        # Get unique context paths from images
+        context_paths = set()
+        for image_id, image_item in session.images.items():
+            if image_item.context_id:
+                context_paths.add(image_item.context_id)
+        
+        # Append status to each context directory
+        for context_path in context_paths:
+            append_context_status(context_path, {
+                "preprocess_status": True,
+                "export_summary": {
+                    "total_images": len(session.images),
+                    "saved_finds": saved_count
+                }
+            })
+        
+        logger.info(f"Appended preprocess status to {len(context_paths)} context directories")
+    except Exception as e:
+        logger.error(f"Failed to append context status: {e}", exc_info=True)
+        # Don't fail the save if appending context status fails
+    
     return {
         "message": f"Saved Stage 3 results to {saved_count} find(s)",
         "saved_count": saved_count

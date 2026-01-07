@@ -86,6 +86,13 @@ export const deleteSession = async (sessionId: string): Promise<void> => {
   await apiClient.delete(`/sessions/${sessionId}`)
 }
 
+export const checkContextStatus = async (contextPath: string): Promise<{ is_preprocessed: boolean }> => {
+  const response = await apiClient.get('/sessions/check-context-status', {
+    params: { context_path: contextPath }
+  })
+  return response.data
+}
+
 export const getSessionImages = async (sessionId: string): Promise<{
   images: Record<string, ImageItem>
   total: number

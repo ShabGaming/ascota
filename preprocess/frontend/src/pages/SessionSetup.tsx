@@ -17,9 +17,10 @@ import {
   CardBody,
   Text,
   Link,
+  Badge,
 } from '@chakra-ui/react'
-import { AddIcon, DeleteIcon } from '@chakra-ui/icons'
-import { createSession } from '../api/client'
+import { AddIcon, DeleteIcon, WarningIcon } from '@chakra-ui/icons'
+import { createSession, checkContextStatus } from '../api/client'
 import { useSessionStore } from '../state/session'
 
 interface SessionSetupProps {
@@ -30,11 +31,12 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
   const [contexts, setContexts] = useState<string[]>([])
   const [currentPath, setCurrentPath] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [preprocessedContexts, setPreprocessedContexts] = useState<Set<string>>(new Set())
   
   const toast = useToast()
   const setSession = useSessionStore(state => state.setSession)
   
-  const handleAddContext = () => {
+  const handleAddContext = async () => {
     const trimmedPath = currentPath.trim()
     if (trimmedPath) {
       const normalizedPath = trimmedPath.replace(/\\/g, '/').toLowerCase()
@@ -52,13 +54,45 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
         return
       }
       
+      // Check if context has been preprocessed BEFORE adding to list
+      let isPreprocessed = false
+      try {
+        const status = await checkContextStatus(trimmedPath)
+        isPreprocessed = status.is_preprocessed
+      } catch {
+        // Silently fail - context might not exist yet or file might not be readable
+        // This is expected for new contexts
+      }
+      
+      // Add context to list
       setContexts([...contexts, trimmedPath])
       setCurrentPath('')
+      
+      // If preprocessed, show warning immediately
+      if (isPreprocessed) {
+        setPreprocessedContexts(prev => new Set(prev).add(trimmedPath))
+        toast({
+          title: 'Context already preprocessed',
+          description: 'This directory has been preprocessed previously. Exporting will update the status.',
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        })
+      }
     }
   }
   
   const handleRemoveContext = (index: number) => {
+    const removedPath = contexts[index]
     setContexts(contexts.filter((_, i) => i !== index))
+    // Remove from preprocessed set if it was there
+    if (removedPath && preprocessedContexts.has(removedPath)) {
+      setPreprocessedContexts(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(removedPath)
+        return newSet
+      })
+    }
   }
   
   const handleStart = async () => {
@@ -129,28 +163,39 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                 
                 {contexts.length > 0 && (
                   <List spacing={2} mt={4}>
-                    {contexts.map((path, index) => (
-                      <ListItem
-                        key={index}
-                        p={2}
-                        bg="gray.50"
-                        borderRadius="md"
-                        display="flex"
-                        justifyContent="space-between"
-                        alignItems="center"
-                      >
-                        <Box fontSize="sm" fontFamily="mono" flex={1}>{path}</Box>
-                        <IconButton
-                          aria-label="Remove context"
-                          icon={<DeleteIcon />}
-                          size="sm"
-                          variant="ghost"
-                          colorScheme="red"
-                          onClick={() => handleRemoveContext(index)}
-                          ml={2}
-                        />
-                      </ListItem>
-                    ))}
+                    {contexts.map((path, index) => {
+                      const isPreprocessed = preprocessedContexts.has(path)
+                      return (
+                        <ListItem
+                          key={index}
+                          p={2}
+                          bg="gray.50"
+                          borderRadius="md"
+                          display="flex"
+                          justifyContent="space-between"
+                          alignItems="center"
+                        >
+                          <HStack spacing={2} flex={1}>
+                            <Box fontSize="sm" fontFamily="mono" flex={1}>{path}</Box>
+                            {isPreprocessed && (
+                              <Badge colorScheme="orange" display="flex" alignItems="center" gap={1}>
+                                <WarningIcon />
+                                Already preprocessed
+                              </Badge>
+                            )}
+                          </HStack>
+                          <IconButton
+                            aria-label="Remove context"
+                            icon={<DeleteIcon />}
+                            size="sm"
+                            variant="ghost"
+                            colorScheme="red"
+                            onClick={() => handleRemoveContext(index)}
+                            ml={2}
+                          />
+                        </ListItem>
+                      )
+                    })}
                   </List>
                 )}
               </FormControl>

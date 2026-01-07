@@ -53,6 +53,86 @@ def ensure_ascota_folder(find_path: str) -> Path:
     return ascota_dir
 
 
+def ensure_context_ascota_folder(context_path: str) -> Path:
+    """Ensure .ascota folder exists in main context directory.
+    
+    Args:
+        context_path: Path to context directory (e.g., D:/ararat/data/files/N/38/478020/4419550/1)
+        
+    Returns:
+        Path to .ascota folder in context directory
+    """
+    context_dir = Path(context_path)
+    ascota_dir = context_dir / ".ascota"
+    
+    # Create directory if it doesn't exist
+    ascota_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Set hidden attribute on Windows
+    set_hidden_attribute_windows(ascota_dir)
+    
+    return ascota_dir
+
+
+def append_context_status(context_path: str, status_data: Dict[str, Any]) -> bool:
+    """Append a status entry to the context metadata JSON file.
+    
+    Args:
+        context_path: Path to context directory
+        status_data: Dictionary with status information (e.g., {"preprocess_status": True})
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        from datetime import datetime
+        
+        ascota_dir = ensure_context_ascota_folder(context_path)
+        metadata_file = ascota_dir / "context_status.json"
+        
+        # Load existing data if file exists
+        existing_data = {"status_history": []}
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+                    # Ensure status_history exists
+                    if "status_history" not in existing_data:
+                        existing_data["status_history"] = []
+            except Exception as e:
+                logger.warning(f"Failed to load existing context_status.json: {e}, creating new file")
+                existing_data = {"status_history": []}
+        
+        # Create new status entry with timestamp
+        timestamp = datetime.now().isoformat()
+        status_entry = {
+            "timestamp": timestamp,
+            **status_data
+        }
+        
+        # Append to history
+        existing_data["status_history"].append(status_entry)
+        
+        # Update latest status
+        existing_data["latest_status"] = status_data
+        
+        # Atomic write: write to temp file, then rename
+        temp_file = metadata_file.with_suffix(".tmp")
+        
+        with open(temp_file, 'w', encoding='utf-8') as f:
+            json.dump(existing_data, f, indent=2, default=str)
+        
+        # Rename to final file
+        temp_file.replace(metadata_file)
+        
+        logger.info(f"Appended status to {metadata_file}: {status_data}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to append context status to {context_path}: {e}", exc_info=True)
+        return False
+
+
 def get_preprocess_json_path(find_path: str) -> Path:
     """Get path to preprocess.json file.
     

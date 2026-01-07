@@ -55,23 +55,14 @@ preprocess/
 
 ### Backend Setup
 
+Assuming virtual enviroment is setup & all requirements are installed.
+
 1. Navigate to backend directory:
 ```bash
 cd preprocess/backend
 ```
 
-2. Create a virtual environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Start the backend server:
+2. Start the backend server:
 ```bash
 uvicorn app.main:app --reload --port 8001
 ```
@@ -85,7 +76,7 @@ The API will be available at `http://localhost:8001`
 cd preprocess/frontend
 ```
 
-2. Install dependencies:
+2. Install dependencies (First time):
 ```bash
 npm install
 ```
