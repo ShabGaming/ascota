@@ -20,13 +20,14 @@ import {
   useDisclosure,
 } from '@chakra-ui/react'
 import { useMutation, useQuery } from 'react-query'
-import { startExport, getJobStatus, ExportSummary } from '../api/client'
+import { startExport, getJobStatus, ExportSummary, deleteSession } from '../api/client'
 
 interface ExportBarProps {
   sessionId: string
+  onExportComplete?: () => void
 }
 
-function ExportBar({ sessionId }: ExportBarProps) {
+function ExportBar({ sessionId, onExportComplete }: ExportBarProps) {
   const [exportJobId, setExportJobId] = useState<string | null>(null)
   const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null)
   const { isOpen, onOpen, onClose } = useDisclosure()
@@ -65,7 +66,7 @@ function ExportBar({ sessionId }: ExportBarProps) {
         }
         return 1000
       },
-      onSuccess: (data) => {
+      onSuccess: async (data) => {
         if (data.status === 'completed') {
           setExportSummary(data.result as ExportSummary)
           onOpen()
@@ -77,6 +78,29 @@ function ExportBar({ sessionId }: ExportBarProps) {
             status: 'success',
             duration: 5000,
           })
+          
+          // Delete the session after successful export
+          try {
+            await deleteSession(sessionId)
+            toast({
+              title: 'Session deleted',
+              description: 'Session has been cleaned up',
+              status: 'info',
+              duration: 2000,
+            })
+            // Call the callback to reset/navigate
+            if (onExportComplete) {
+              onExportComplete()
+            }
+          } catch (error) {
+            console.error('Failed to delete session:', error)
+            toast({
+              title: 'Failed to delete session',
+              description: error instanceof Error ? error.message : 'Unknown error',
+              status: 'warning',
+              duration: 3000,
+            })
+          }
         } else if (data.status === 'failed') {
           setExportJobId(null)
           toast({

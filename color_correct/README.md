@@ -39,23 +39,14 @@ color_correct/
 
 ### Backend Setup
 
+Assuming virtual enviroment is setup & all requirements are installed.
+
 1. Navigate to backend directory:
 ```bash
 cd color_correct/backend
 ```
 
-2. Create a virtual environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Start the backend server:
+2. Start the backend server:
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```

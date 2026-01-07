@@ -100,12 +100,12 @@ function ClusterBoard({
     const saved = getCookie('colorCorrectReferenceSplitPosition')
     if (saved) {
       const parsed = parseFloat(saved)
-      // Ensure correction panel has at least 30% width
+      // Ensure correction panel has at least 30% width and reference panel doesn't exceed 40%
       if (!isNaN(parsed) && parsed >= 20 && parsed <= 70) {
         return parsed
       }
     }
-    return 30 // Default for 3-panel layout: 30% images, 20% reference, 50% correction
+    return 50 // Default for 3-panel layout: 40% images, 10% reference, 50% correction
   }
   
   const [splitPosition, setSplitPosition] = useState(getInitialSplitPosition())
@@ -167,14 +167,26 @@ function ClusterBoard({
         const newPosition = Math.max(20, Math.min(maxPosition, (mouseX / containerWidth) * 100))
         setSplitPosition(newPosition)
         setCookie('colorCorrectSplitPosition', newPosition.toString())
-        // Ensure reference splitter is always after first splitter
-        if (referenceImagesEnabled && newPosition >= referenceSplitPosition) {
-          setReferenceSplitPosition(Math.min(70, newPosition + 15))
+        // Ensure reference splitter is always after first splitter and reference panel doesn't exceed 40%
+        if (referenceImagesEnabled) {
+          if (newPosition >= referenceSplitPosition) {
+            // First splitter moved past reference splitter, adjust reference splitter
+            const newReferencePosition = Math.min(70, newPosition + 15)
+            setReferenceSplitPosition(newReferencePosition)
+          } else if (referenceSplitPosition - newPosition > 40) {
+            // Reference panel would exceed 40%, adjust reference splitter
+            setReferenceSplitPosition(newPosition + 40)
+          }
         }
       } else if (isDraggingReference) {
         // Calculate percentage for reference splitter
         // Must be after first splitter and ensure correction panel has at least 30% width
-        const newPosition = Math.max(splitPosition + 15, Math.min(70, (mouseX / containerWidth) * 100))
+        // Also ensure reference panel doesn't exceed 40% to prevent horizontal overflow
+        const minPosition = splitPosition + 10 // Minimum gap between splitters
+        const maxPositionForCorrection = 70 // Max 70% so correction panel has at least 30%
+        const maxPositionForReference = splitPosition + 40 // Reference panel max 40%
+        const maxPosition = Math.min(maxPositionForCorrection, maxPositionForReference)
+        const newPosition = Math.max(minPosition, Math.min(maxPosition, (mouseX / containerWidth) * 100))
         setReferenceSplitPosition(newPosition)
         setCookie('colorCorrectReferenceSplitPosition', newPosition.toString())
       }
@@ -589,6 +601,8 @@ function ClusterBoard({
               h="calc(100vh - 180px)"
               display="flex"
               position="relative"
+              overflowX="hidden"
+              w="100%"
             >
               {/* Left panel: Images */}
               <Box
@@ -632,11 +646,12 @@ function ClusterBoard({
               {referenceImagesEnabled && (
                 <>
                   <Box
-                    flex={`0 0 ${Math.max(15, referenceSplitPosition - splitPosition)}%`}
+                    flex={`0 0 ${Math.max(15, Math.min(40, referenceSplitPosition - splitPosition))}%`}
                     overflowY="auto"
                     overflowX="hidden"
                     bg="white"
                     minW="200px"
+                    maxW="40%"
                   >
                     <ReferencePanel sessionId={sessionId} />
                   </Box>
@@ -667,6 +682,7 @@ function ClusterBoard({
                 overflowX="hidden"
                 bg="gray.50"
                 minW="400px"
+                flexShrink={1}
               >
                 {selectedImageId && selectedClusterId && selectedClusterId === fullscreenClusterId ? (
                   <CorrectionPanel
@@ -700,7 +716,7 @@ function ClusterBoard({
       </Box>
       
       {/* Export bar */}
-      <ExportBar sessionId={sessionId} />
+      <ExportBar sessionId={sessionId} onExportComplete={onReset} />
     </Box>
   )
 }
