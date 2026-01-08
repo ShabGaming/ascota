@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.services.models import CreateSessionRequest, CreateSessionResponse, ImageItem
 from app.services.session_store import get_session_store
-from app.services.metadata import ensure_context_ascota_folder
+from app.services.metadata import ensure_context_ascota_folder, delete_existing_context_data
 from typing import Dict
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,14 @@ router = APIRouter()
 async def create_session(request: CreateSessionRequest):
     """Create a new preprocess session."""
     try:
+        # If overwrite_existing is True, delete existing masks and preprocess.json files
+        if request.overwrite_existing:
+            total_deleted = 0
+            for context_path in request.contexts:
+                deleted_count = delete_existing_context_data(context_path)
+                total_deleted += deleted_count
+            logger.info(f"Deleted existing context data from {total_deleted} finds across {len(request.contexts)} contexts")
+        
         store = get_session_store()
         session_id = store.create_session(request.contexts)
         logger.info(f"Created session {session_id}")
@@ -89,17 +97,14 @@ async def check_context_status(context_path: str = Query(..., description="Path 
             with open(status_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
-            # Check latest_status for preprocess_status
-            if "latest_status" in data:
-                latest = data["latest_status"]
-                is_preprocessed = latest.get("preprocess_status", False)
-                return {"is_preprocessed": bool(is_preprocessed)}
-            
-            # Fallback: check status_history
+            # Check status_history for preprocess_status
+            # Look through history in reverse order to find the most recent preprocess_status
             if "status_history" in data and len(data["status_history"]) > 0:
-                last_entry = data["status_history"][-1]
-                is_preprocessed = last_entry.get("preprocess_status", False)
-                return {"is_preprocessed": bool(is_preprocessed)}
+                # Check entries in reverse order (most recent first)
+                for entry in reversed(data["status_history"]):
+                    if "preprocess_status" in entry:
+                        is_preprocessed = entry.get("preprocess_status", False)
+                        return {"is_preprocessed": bool(is_preprocessed)}
             
             return {"is_preprocessed": False}
             

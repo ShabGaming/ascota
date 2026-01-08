@@ -1,6 +1,7 @@
 """Service for managing .ascota folder and preprocess.json storage."""
 
 import json
+import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 import logging
@@ -113,9 +114,6 @@ def append_context_status(context_path: str, status_data: Dict[str, Any]) -> boo
         # Append to history
         existing_data["status_history"].append(status_entry)
         
-        # Update latest status
-        existing_data["latest_status"] = status_data
-        
         # Atomic write: write to temp file, then rename
         temp_file = metadata_file.with_suffix(".tmp")
         
@@ -131,6 +129,69 @@ def append_context_status(context_path: str, status_data: Dict[str, Any]) -> boo
     except Exception as e:
         logger.error(f"Failed to append context status to {context_path}: {e}", exc_info=True)
         return False
+
+
+def delete_existing_context_data(context_path: str) -> int:
+    """Delete masks folder and preprocess.json from all finds in a context.
+    
+    Args:
+        context_path: Path to context directory (e.g., D:/ararat/data/files/N/38/478020/4419550/1)
+        
+    Returns:
+        Number of finds that had data deleted
+    """
+    deleted_count = 0
+    context_dir = Path(context_path)
+    
+    if not context_dir.exists():
+        logger.warning(f"Context path does not exist: {context_path}")
+        return deleted_count
+    
+    # Look for finds/individual/*/ directories
+    finds_base = context_dir / "finds" / "individual"
+    
+    if not finds_base.exists():
+        logger.debug(f"No finds directory at: {finds_base}")
+        return deleted_count
+    
+    # Iterate through all find directories
+    for find_dir in finds_base.iterdir():
+        if not find_dir.is_dir():
+            continue
+        
+        find_path = str(find_dir)
+        ascota_dir = find_dir / ".ascota"
+        
+        if not ascota_dir.exists():
+            continue
+        
+        had_data = False
+        
+        # Delete masks folder
+        masks_dir = ascota_dir / "masks"
+        if masks_dir.exists() and masks_dir.is_dir():
+            try:
+                shutil.rmtree(masks_dir)
+                logger.info(f"Deleted masks folder from {find_path}")
+                had_data = True
+            except Exception as e:
+                logger.error(f"Failed to delete masks folder from {find_path}: {e}")
+        
+        # Delete preprocess.json
+        preprocess_json = ascota_dir / "preprocess.json"
+        if preprocess_json.exists() and preprocess_json.is_file():
+            try:
+                preprocess_json.unlink()
+                logger.info(f"Deleted preprocess.json from {find_path}")
+                had_data = True
+            except Exception as e:
+                logger.error(f"Failed to delete preprocess.json from {find_path}: {e}")
+        
+        if had_data:
+            deleted_count += 1
+    
+    logger.info(f"Deleted existing context data from {deleted_count} finds in {context_path}")
+    return deleted_count
 
 
 def get_preprocess_json_path(find_path: str) -> Path:
