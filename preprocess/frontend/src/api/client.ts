@@ -66,6 +66,7 @@ export interface Stage3Results {
 // Session management
 export interface CreateSessionRequest {
   contexts: string[]
+  overwrite_existing?: boolean
 }
 
 export interface CreateSessionResponse {
@@ -166,6 +167,19 @@ export const updateMask = async (
 
 export const saveStage2 = async (sessionId: string): Promise<{ message: string; saved_count: number }> => {
   const response = await apiClient.post(`/sessions/${sessionId}/stage2/save`)
+  return response.data
+}
+
+export const wandSelect = async (
+  sessionId: string,
+  imageId: string,
+  x: number,
+  y: number
+): Promise<{ mask_data: string }> => {
+  const response = await apiClient.post(`/sessions/${sessionId}/stage2/image/${imageId}/wand-select`, {
+    x,
+    y
+  })
   return response.data
 }
 

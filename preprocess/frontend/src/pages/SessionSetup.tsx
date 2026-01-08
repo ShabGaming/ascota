@@ -18,6 +18,7 @@ import {
   Text,
   Link,
   Badge,
+  Switch,
 } from '@chakra-ui/react'
 import { AddIcon, DeleteIcon, WarningIcon } from '@chakra-ui/icons'
 import { createSession, checkContextStatus } from '../api/client'
@@ -32,6 +33,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
   const [currentPath, setCurrentPath] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [preprocessedContexts, setPreprocessedContexts] = useState<Set<string>>(new Set())
+  const [overwriteExisting, setOverwriteExisting] = useState(false)
   
   const toast = useToast()
   const setSession = useSessionStore(state => state.setSession)
@@ -111,6 +113,7 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
     try {
       const response = await createSession({
         contexts,
+        overwrite_existing: overwriteExisting,
       })
       
       setSession(response.session_id)
@@ -200,6 +203,25 @@ function SessionSetup({ onComplete }: SessionSetupProps) {
                 )}
               </FormControl>
             </VStack>
+          </CardBody>
+        </Card>
+        
+        <Card>
+          <CardBody>
+            <FormControl display="flex" alignItems="center" justifyContent="space-between">
+              <Box>
+                <FormLabel mb={1}>Overwrite & Delete Existing Context</FormLabel>
+                <Text fontSize="sm" color="gray.600">
+                  When enabled, deletes masks folder and preprocess.json from each find's .ascota folder
+                </Text>
+              </Box>
+              <Switch
+                isChecked={overwriteExisting}
+                onChange={(e) => setOverwriteExisting(e.target.checked)}
+                colorScheme="red"
+                size="lg"
+              />
+            </FormControl>
           </CardBody>
         </Card>
         

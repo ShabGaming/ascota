@@ -12,7 +12,7 @@ import {
   useToast,
 } from '@chakra-ui/react'
 import { useMutation, useQueryClient } from 'react-query'
-import { updateMask, getImageUrl, getMaskUrl, getStage2Results } from '../api/client'
+import { updateMask, getImageUrl, getMaskUrl, getStage2Results, wandSelect } from '../api/client'
 import { useSessionStore } from '../state/session'
 
 interface MaskPainterProps {
@@ -30,6 +30,11 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
   const [isPainting, setIsPainting] = useState(false)
   const [paintMode, setPaintMode] = useState<'in' | 'out'>('in')
   const [maskOpacity, setMaskOpacity] = useState(0.5)
+  const [isWandMode, setIsWandMode] = useState(false)
+  const [isWandLoading, setIsWandLoading] = useState(false)
+  const [maskHistory, setMaskHistory] = useState<ImageData[]>([])
+  const lastPaintPos = useRef<{ x: number; y: number } | null>(null)
+  const [brushPreviewPos, setBrushPreviewPos] = useState<{ x: number; y: number } | null>(null)
   const toast = useToast()
   
   const images = useSessionStore(state => state.images)
@@ -67,8 +72,8 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
         const maskCtx = maskCanvas.getContext('2d')
         if (maskCtx) {
           const result = stage2Results[imageId]
-          if (result?.mask_path) {
-            // Load existing mask from .ascota metadata
+          if (result?.mask_path && !isWandMode) {
+            // Load existing mask from .ascota metadata (only if not in wand mode)
             const maskImg = new window.Image()
             maskImg.crossOrigin = 'anonymous'
             maskImg.src = getMaskUrl(sessionId, imageId, result.mask_path)
@@ -92,11 +97,40 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
             maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height)
             const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
             setMask(maskData)
+            // Clear history when loading new image
+            setMaskHistory([])
           }
         }
       }
     }
-  }, [imageId, images, sessionId, stage2Results])
+  }, [imageId, images, sessionId, stage2Results, isWandMode])
+  
+  // Initialize mask to all background when wand mode is activated
+  useEffect(() => {
+    if (isWandMode && maskCanvasRef.current && image) {
+      const maskCanvas = maskCanvasRef.current
+      const maskCtx = maskCanvas.getContext('2d')
+      if (maskCtx) {
+        // Save current state to history before initializing
+        const currentMaskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
+        setMaskHistory(prev => {
+          // Only save if it's different from the last history entry
+          if (prev.length === 0 || 
+              JSON.stringify(currentMaskData.data) !== JSON.stringify(prev[prev.length - 1].data)) {
+            return [...prev, currentMaskData].slice(-20)
+          }
+          return prev
+        })
+        
+        // Initialize to all background (black)
+        maskCtx.fillStyle = 'black'
+        maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height)
+        const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
+        setMask(maskData)
+        drawMaskOverlay()
+      }
+    }
+  }, [isWandMode, image])
   
   const drawMaskOverlay = () => {
     const canvas = canvasRef.current
@@ -153,13 +187,29 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
         ctx.drawImage(overlayCanvas, 0, 0)
       }
     }
+    
+    // Draw brush preview circle if not painting and not in wand mode
+    if (brushPreviewPos && !isPainting && !isWandMode) {
+      // brushPreviewPos is already in canvas coordinates
+      const previewX = brushPreviewPos.x
+      const previewY = brushPreviewPos.y
+      const previewRadius = brushSize
+      
+      ctx.strokeStyle = paintMode === 'in' ? '#00ff00' : '#ff0000'
+      ctx.lineWidth = 2
+      ctx.setLineDash([5, 5])
+      ctx.beginPath()
+      ctx.arc(previewX, previewY, previewRadius, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
   }
   
   useEffect(() => {
     drawMaskOverlay()
-  }, [maskOpacity, mask, image])
+  }, [maskOpacity, mask, image, brushPreviewPos, isPainting, isWandMode, brushSize, paintMode])
   
-  const paintAt = (x: number, y: number) => {
+  const paintAt = (x: number, y: number, isFirstPoint: boolean = false) => {
     const maskCanvas = maskCanvasRef.current
     if (!maskCanvas || !mask) return
     
@@ -167,9 +217,32 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
     if (!ctx) return
     
     ctx.fillStyle = paintMode === 'in' ? 'white' : 'black'
-    ctx.beginPath()
-    ctx.arc(x, y, brushSize, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.strokeStyle = paintMode === 'in' ? 'white' : 'black'
+    ctx.lineWidth = brushSize * 2
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    
+    if (isFirstPoint || !lastPaintPos.current) {
+      // First point: draw a circle
+      ctx.beginPath()
+      ctx.arc(x, y, brushSize, 0, Math.PI * 2)
+      ctx.fill()
+      lastPaintPos.current = { x, y }
+    } else {
+      // Subsequent points: draw a line from previous to current
+      const prev = lastPaintPos.current
+      ctx.beginPath()
+      ctx.moveTo(prev.x, prev.y)
+      ctx.lineTo(x, y)
+      ctx.stroke()
+      
+      // Also draw a circle at the end to ensure smooth connection
+      ctx.beginPath()
+      ctx.arc(x, y, brushSize, 0, Math.PI * 2)
+      ctx.fill()
+      
+      lastPaintPos.current = { x, y }
+    }
     
     // Update mask data
     const maskData = ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
@@ -187,27 +260,151 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
     const x = (e.clientX - rect.left) * scaleX
     const y = (e.clientY - rect.top) * scaleY
     
-    setIsPainting(true)
-    paintAt(x, y)
+    if (isWandMode) {
+      // Wand tool: call MobileSAM
+      handleWandClick(x, y)
+    } else {
+      // Brush tool: paint
+      setIsPainting(true)
+      lastPaintPos.current = null // Reset position for new stroke
+      paintAt(x, y, true)
+    }
+  }
+  
+  const handleWandClick = async (x: number, y: number) => {
+    if (isWandLoading || !maskCanvasRef.current || !mask) return
+    
+    const maskCanvas = maskCanvasRef.current
+    const maskCtx = maskCanvas.getContext('2d')
+    if (!maskCtx) return
+    
+    // Save current mask to history before wand operation
+    const currentMaskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
+    setMaskHistory(prev => {
+      const newHistory = [...prev, currentMaskData]
+      // Limit history to 20 states
+      return newHistory.slice(-20)
+    })
+    
+    setIsWandLoading(true)
+    
+    try {
+      // Call MobileSAM API
+      const response = await wandSelect(sessionId, imageId, Math.round(x), Math.round(y))
+      
+      // Load the returned mask as an image
+      const samMaskImg = new window.Image()
+      samMaskImg.onload = () => {
+        // Create a temporary canvas to process the SAM mask
+        const tempCanvas = document.createElement('canvas')
+        tempCanvas.width = maskCanvas.width
+        tempCanvas.height = maskCanvas.height
+        const tempCtx = tempCanvas.getContext('2d')
+        
+        if (tempCtx) {
+          // Draw the SAM mask
+          tempCtx.drawImage(samMaskImg, 0, 0)
+          const samMaskData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height)
+          
+          // Merge SAM mask with current mask using OR operation
+          // SAM mask: white = foreground (255), black = background (0)
+          // Current mask: white = foreground (255), black = background (0)
+          // We want to add SAM foreground to current mask
+          const currentMaskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
+          
+          for (let i = 0; i < currentMaskData.data.length; i += 4) {
+            const samValue = samMaskData.data[i] // Red channel
+            const currentValue = currentMaskData.data[i]
+            
+            // OR operation: if either mask has foreground, result is foreground
+            const mergedValue = Math.max(samValue, currentValue)
+            currentMaskData.data[i] = mergedValue     // R
+            currentMaskData.data[i + 1] = mergedValue // G
+            currentMaskData.data[i + 2] = mergedValue // B
+            currentMaskData.data[i + 3] = 255        // A
+          }
+          
+          // Update mask canvas
+          maskCtx.putImageData(currentMaskData, 0, 0)
+          setMask(currentMaskData)
+          drawMaskOverlay()
+        }
+        
+        setIsWandLoading(false)
+      }
+      
+      samMaskImg.onerror = () => {
+        toast({
+          title: 'Failed to load SAM mask',
+          status: 'error',
+          duration: 3000,
+        })
+        setIsWandLoading(false)
+      }
+      
+      // Load mask from base64
+      samMaskImg.src = `data:image/png;base64,${response.mask_data}`
+      
+    } catch (error) {
+      toast({
+        title: 'Wand selection failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 5000,
+      })
+      setIsWandLoading(false)
+    }
+  }
+  
+  const handleUndo = () => {
+    if (maskHistory.length === 0 || !maskCanvasRef.current) return
+    
+    const maskCanvas = maskCanvasRef.current
+    const maskCtx = maskCanvas.getContext('2d')
+    if (!maskCtx) return
+    
+    // Restore previous mask state
+    const previousMask = maskHistory[maskHistory.length - 1]
+    maskCtx.putImageData(previousMask, 0, 0)
+    setMask(previousMask)
+    setMaskHistory(prev => prev.slice(0, -1))
+    drawMaskOverlay()
   }
   
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isPainting) return
-    
     const canvas = canvasRef.current
     if (!canvas) return
     
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-    const x = (e.clientX - rect.left) * scaleX
-    const y = (e.clientY - rect.top) * scaleY
+    const displayX = e.clientX - rect.left
+    const displayY = e.clientY - rect.top
+    const canvasX = displayX * scaleX
+    const canvasY = displayY * scaleY
     
-    paintAt(x, y)
+    // Update brush preview position (in canvas coordinates)
+    if (!isPainting && !isWandMode) {
+      setBrushPreviewPos({ x: canvasX, y: canvasY })
+    } else {
+      setBrushPreviewPos(null)
+    }
+    
+    // Handle painting
+    if (isPainting) {
+      paintAt(canvasX, canvasY)
+    }
   }
   
   const handleMouseUp = () => {
     setIsPainting(false)
+    lastPaintPos.current = null // Reset position when stroke ends
+  }
+  
+  const handleMouseLeave = () => {
+    setIsPainting(false)
+    lastPaintPos.current = null
+    setBrushPreviewPos(null) // Hide preview when mouse leaves canvas
   }
   
   const updateMutation = useMutation(
@@ -222,7 +419,7 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
       return updateMask(sessionId, imageId, base64)
     },
     {
-      onSuccess: async (response) => {
+      onSuccess: async () => {
         // Invalidate and refetch stage2 results to update preview
         await queryClient.invalidateQueries(['stage2Results', sessionId])
         // Force a refetch to ensure the preview updates
@@ -268,16 +465,38 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
       
       <HStack>
         <Button
-          onClick={() => setPaintMode('in')}
-          colorScheme={paintMode === 'in' ? 'green' : 'gray'}
+          onClick={() => {
+            setIsWandMode(false)
+            setPaintMode('in')
+          }}
+          colorScheme={!isWandMode && paintMode === 'in' ? 'green' : 'gray'}
+          isDisabled={isWandMode}
         >
           Paint In (Foreground)
         </Button>
         <Button
-          onClick={() => setPaintMode('out')}
-          colorScheme={paintMode === 'out' ? 'red' : 'gray'}
+          onClick={() => {
+            setIsWandMode(false)
+            setPaintMode('out')
+          }}
+          colorScheme={!isWandMode && paintMode === 'out' ? 'red' : 'gray'}
+          isDisabled={isWandMode}
         >
           Paint Out (Background)
+        </Button>
+        <Button
+          onClick={() => setIsWandMode(true)}
+          colorScheme={isWandMode ? 'purple' : 'gray'}
+          isLoading={isWandLoading}
+        >
+          Wand Tool
+        </Button>
+        <Button
+          onClick={handleUndo}
+          isDisabled={maskHistory.length === 0 || isWandLoading}
+          variant="outline"
+        >
+          Undo
         </Button>
       </HStack>
       
@@ -298,14 +517,32 @@ function MaskPainter({ sessionId, imageId, onClose }: MaskPainterProps) {
         </Slider>
       </HStack>
       
-      <Box border="1px" borderColor="gray.200" borderRadius="md" overflow="hidden">
+      <Box 
+        border="1px" 
+        borderColor="gray.200" 
+        borderRadius="md" 
+        overflow="auto"
+        maxH="calc(100vh - 350px)"
+        display="flex"
+        justifyContent="center"
+        alignItems="flex-start"
+        bg="gray.50"
+        p={2}
+      >
         <canvas
           ref={canvasRef}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          style={{ cursor: 'crosshair', display: 'block', maxWidth: '100%', height: 'auto' }}
+          onMouseLeave={handleMouseLeave}
+          style={{ 
+            cursor: isWandMode ? (isWandLoading ? 'wait' : 'pointer') : 'crosshair', 
+            display: 'block', 
+            maxWidth: '100%', 
+            maxHeight: 'calc(100vh - 350px)',
+            width: 'auto',
+            height: 'auto'
+          }}
         />
         <canvas ref={maskCanvasRef} style={{ display: 'none' }} />
       </Box>

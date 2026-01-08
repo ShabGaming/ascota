@@ -298,7 +298,7 @@ function CardEditor({ sessionId, imageId, onClose }: CardEditorProps) {
   
   return (
     <VStack spacing={4} align="stretch">
-      <HStack>
+      <HStack alignItems="flex-end">
         <FormControl>
           <FormLabel>Card Type</FormLabel>
           <Select
