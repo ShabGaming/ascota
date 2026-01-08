@@ -19,6 +19,7 @@ class ImageItem(BaseModel):
 class CreateSessionRequest(BaseModel):
     """Request to create a new session."""
     contexts: List[str] = Field(..., description="List of context directory paths")
+    overwrite_existing: bool = Field(False, description="If true, delete existing masks and preprocess.json files")
 
 
 class CreateSessionResponse(BaseModel):
@@ -89,3 +90,8 @@ class UpdateCentersRequest(BaseModel):
     """Request to update 8-hybrid circle centers."""
     centers: List[List[float]] = Field(..., description="3 circle centers [[x1,y1], [x2,y2], [x3,y3]]")
 
+
+class WandSelectRequest(BaseModel):
+    """Request for wand tool selection using MobileSAM."""
+    x: int = Field(..., description="X coordinate of click point in image space")
+    y: int = Field(..., description="Y coordinate of click point in image space")

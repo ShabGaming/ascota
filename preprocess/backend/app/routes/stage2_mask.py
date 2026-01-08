@@ -6,8 +6,9 @@ import logging
 from pathlib import Path
 
 from app.services.session_store import get_session_store
-from app.services.models import Stage2Results, MaskResult, UpdateMaskRequest
-from app.services.segmentation import generate_mask, base64_to_mask
+from app.services.models import Stage2Results, MaskResult, UpdateMaskRequest, WandSelectRequest
+from app.services.segmentation import generate_mask, base64_to_mask, mask_to_base64
+from app.services.mobilesam import segment_from_point
 from app.services.metadata import save_mask, load_preprocess_json, save_preprocess_json, load_stage2_data_for_image, load_mask
 from datetime import datetime
 
@@ -257,6 +258,60 @@ async def update_mask(
         return {"message": "Mask updated", "mask_path": mask_path}
     else:
         raise HTTPException(status_code=500, detail="Failed to save mask")
+
+
+@router.post("/{session_id}/stage2/image/{image_id}/wand-select")
+async def wand_select(
+    session_id: str,
+    image_id: str,
+    request: WandSelectRequest
+):
+    """Use MobileSAM wand tool to select foreground region from a point click."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    image = session.get_image(image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    # Use -3000 image for MobileSAM segmentation
+    image_path_str = image.proxy_3000
+    if not image_path_str or not Path(image_path_str).exists():
+        raise HTTPException(status_code=404, detail=f"Image file not found: {image_path_str}")
+    
+    # Validate coordinates are within image bounds
+    from PIL import Image as PILImage
+    try:
+        img = PILImage.open(image_path_str)
+        img_width, img_height = img.size
+        
+        if request.x < 0 or request.x >= img_width or request.y < 0 or request.y >= img_height:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Point coordinates ({request.x}, {request.y}) are out of bounds. Image size: {img_width}x{img_height}"
+            )
+    except Exception as e:
+        logger.error(f"Failed to validate image dimensions: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to validate image: {e}")
+    
+    # Run MobileSAM segmentation
+    try:
+        mask = segment_from_point(image_path_str, request.x, request.y, point_label=1)
+        
+        if mask is None:
+            raise HTTPException(status_code=500, detail="MobileSAM segmentation failed")
+        
+        # Convert mask to base64
+        mask_data = mask_to_base64(mask)
+        
+        return {"mask_data": mask_data}
+        
+    except Exception as e:
+        logger.error(f"Wand select failed for image {image_id} at ({request.x}, {request.y}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Wand selection failed: {str(e)}")
 
 
 @router.post("/{session_id}/stage2/save")
