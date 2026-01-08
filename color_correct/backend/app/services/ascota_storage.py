@@ -112,9 +112,6 @@ def append_context_status(context_path: str, status_data: Dict[str, Any]) -> boo
         # Append to history
         existing_data["status_history"].append(status_entry)
         
-        # Update latest status
-        existing_data["latest_status"] = status_data
-        
         # Atomic write: write to temp file, then rename
         temp_file = metadata_file.with_suffix(".tmp")
         

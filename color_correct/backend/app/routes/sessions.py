@@ -137,17 +137,14 @@ async def check_context_status(context_path: str = Query(..., description="Path 
             with open(status_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
-            # Check latest_status for color_correct_status
-            if "latest_status" in data:
-                latest = data["latest_status"]
-                is_corrected = latest.get("color_correct_status", False)
-                return {"is_color_corrected": bool(is_corrected)}
-            
-            # Fallback: check status_history
+            # Check status_history for color_correct_status
+            # Look through history in reverse order to find the most recent color_correct_status
             if "status_history" in data and len(data["status_history"]) > 0:
-                last_entry = data["status_history"][-1]
-                is_corrected = last_entry.get("color_correct_status", False)
-                return {"is_color_corrected": bool(is_corrected)}
+                # Check entries in reverse order (most recent first)
+                for entry in reversed(data["status_history"]):
+                    if "color_correct_status" in entry:
+                        is_corrected = entry.get("color_correct_status", False)
+                        return {"is_color_corrected": bool(is_corrected)}
             
             return {"is_color_corrected": False}
             
