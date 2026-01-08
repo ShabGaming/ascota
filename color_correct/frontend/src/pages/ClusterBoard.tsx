@@ -716,7 +716,11 @@ function ClusterBoard({
       </Box>
       
       {/* Export bar */}
-      <ExportBar sessionId={sessionId} onExportComplete={onReset} />
+      <ExportBar 
+        sessionId={sessionId} 
+        onExportComplete={onReset}
+        isEditing={!!(fullscreenClusterId && selectedImageId)}
+      />
     </Box>
   )
 }

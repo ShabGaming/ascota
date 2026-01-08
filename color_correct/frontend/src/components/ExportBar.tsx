@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Box,
   Container,
@@ -18,6 +18,12 @@ import {
   List,
   ListItem,
   useDisclosure,
+  AlertDialog,
+  AlertDialogBody,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogContent,
+  AlertDialogOverlay,
 } from '@chakra-ui/react'
 import { useMutation, useQuery } from 'react-query'
 import { startExport, getJobStatus, ExportSummary, deleteSession } from '../api/client'
@@ -25,12 +31,15 @@ import { startExport, getJobStatus, ExportSummary, deleteSession } from '../api/
 interface ExportBarProps {
   sessionId: string
   onExportComplete?: () => void
+  isEditing?: boolean
 }
 
-function ExportBar({ sessionId, onExportComplete }: ExportBarProps) {
+function ExportBar({ sessionId, onExportComplete, isEditing = false }: ExportBarProps) {
   const [exportJobId, setExportJobId] = useState<string | null>(null)
   const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null)
   const { isOpen, onOpen, onClose } = useDisclosure()
+  const { isOpen: isConfirmOpen, onOpen: onConfirmOpen, onClose: onConfirmClose } = useDisclosure()
+  const cancelRef = useRef<HTMLButtonElement>(null)
   const toast = useToast()
   
   const exportMutation = useMutation(
@@ -117,6 +126,20 @@ function ExportBar({ sessionId, onExportComplete }: ExportBarProps) {
   const isExporting = !!exportJobId
   const progress = jobStatus?.progress || 0
   
+  const handleExportClick = () => {
+    onConfirmOpen()
+  }
+  
+  const handleConfirmExport = () => {
+    onConfirmClose()
+    exportMutation.mutate()
+  }
+  
+  // Hide export bar when editing
+  if (isEditing && !isExporting) {
+    return null
+  }
+  
   return (
     <>
       <Box
@@ -158,7 +181,7 @@ function ExportBar({ sessionId, onExportComplete }: ExportBarProps) {
               <Button
                 colorScheme="brand"
                 size="md"
-                onClick={() => exportMutation.mutate()}
+                onClick={handleExportClick}
                 isLoading={exportMutation.isLoading}
               >
                 Export All
@@ -167,6 +190,32 @@ function ExportBar({ sessionId, onExportComplete }: ExportBarProps) {
           )}
         </Container>
       </Box>
+      
+      {/* Confirmation dialog */}
+      <AlertDialog
+        isOpen={isConfirmOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={onConfirmClose}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Confirm Export
+            </AlertDialogHeader>
+            <AlertDialogBody>
+              Are you sure you want to export all corrected images? This will process and save all images with the current corrections.
+            </AlertDialogBody>
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={onConfirmClose}>
+                Cancel
+              </Button>
+              <Button colorScheme="brand" onClick={handleConfirmExport} ml={3}>
+                Export
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
       
       {/* Export summary modal */}
       <Modal isOpen={isOpen} onClose={onClose} size="lg">
