@@ -13,7 +13,7 @@ gradio==3.35.2
 ultralytics == 8.0.120
 streamlit==1.49.1
 timm>=1.0.19
-sklearn>=1.7.2
+scikit-learn>=1.7.2
 plotly
 openai
 rawpy==0.19.0
