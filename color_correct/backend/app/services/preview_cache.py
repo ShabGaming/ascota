@@ -1,20 +1,22 @@
 """Preview cache service for storing converted RAW images."""
 
 import os
-import tempfile
 import hashlib
 from pathlib import Path
 from typing import Optional, Tuple
 import logging
 
+from app.services.ascota_storage import get_ascota_dir
+
 logger = logging.getLogger(__name__)
 
-# Cache directory in temp folder
-CACHE_DIR = Path(tempfile.gettempdir()) / "color_correct_preview_cache"
+# Cache directory under color_correct/.ascota/preview_cache
+CACHE_DIR = get_ascota_dir() / "preview_cache"
 
 
 def ensure_cache_dir():
-    """Ensure the cache directory exists."""
+    """Ensure the .ascota and preview_cache directories exist."""
+    get_ascota_dir()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 

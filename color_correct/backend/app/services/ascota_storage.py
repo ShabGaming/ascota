@@ -31,6 +31,24 @@ def set_hidden_attribute_windows(path: Path):
         logger.warning(f"Failed to set hidden attribute on {path}: {e}")
 
 
+# Color correction app root: color_correct/backend/app/services -> parent^4 = color_correct
+_COLOR_CORRECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+
+def get_ascota_dir() -> Path:
+    """Return color_correct/.ascota directory; create it and set hidden on Windows if needed.
+    
+    Used for session storage, reference images, and preview cache.
+    
+    Returns:
+        Path to .ascota folder inside the color_correct app directory
+    """
+    ascota_dir = _COLOR_CORRECT_ROOT / ".ascota"
+    ascota_dir.mkdir(parents=True, exist_ok=True)
+    set_hidden_attribute_windows(ascota_dir)
+    return ascota_dir
+
+
 def ensure_ascota_folder(find_path: str) -> Path:
     """Ensure .ascota folder exists in find directory.
     

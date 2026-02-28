@@ -7,26 +7,23 @@ import shutil
 import uuid
 import logging
 from typing import List
-import tempfile
 from pydantic import BaseModel
 
 from app.services.session_store import get_session_store
+from app.services.ascota_storage import get_ascota_dir
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Reference images storage directory
-REFERENCE_IMAGES_DIR = Path(tempfile.gettempdir()) / "color_correct_reference_images"
 
 # Preset reference images directory (in backend/app directory)
 PRESET_REFERENCES_DIR = Path(__file__).parent.parent / "preset_references"
 
 
 def ensure_reference_dir(session_id: str) -> Path:
-    """Ensure the reference images directory for a session exists."""
-    session_dir = REFERENCE_IMAGES_DIR / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    return session_dir
+    """Ensure the reference images directory for a session exists under .ascota/sessions/<id>/reference_images."""
+    ref_dir = get_ascota_dir() / "sessions" / session_id / "reference_images"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    return ref_dir
 
 
 def get_reference_image_path(session_id: str, image_id: str) -> Path:

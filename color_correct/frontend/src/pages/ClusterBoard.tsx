@@ -288,6 +288,10 @@ function ClusterBoard({
       enabled: !isPolling,
       onSuccess: (data) => {
         setClusters(data)
+        // Skip "Discovered Images" when session already has clusters (e.g. restored session)
+        if (data.clusters && data.clusters.length > 0) {
+          setShowDiscoveredImages(false)
+        }
       },
     }
   )

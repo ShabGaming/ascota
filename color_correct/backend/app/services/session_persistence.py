@@ -1,21 +1,23 @@
 """Session persistence service for saving/loading sessions from disk."""
 
 import json
-import os
-import tempfile
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 import logging
 
+from app.services.ascota_storage import get_ascota_dir
+
 logger = logging.getLogger(__name__)
 
-# Session storage directory
-SESSION_DIR = Path(tempfile.gettempdir()) / "color_correct_sessions"
+# Session storage directory: color_correct/.ascota/sessions
+SESSION_DIR = get_ascota_dir() / "sessions"
 
 
 def ensure_session_dir():
-    """Ensure the session directory exists."""
+    """Ensure the .ascota and sessions directories exist."""
+    get_ascota_dir()
     SESSION_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -83,24 +85,30 @@ def load_session(session_id: str) -> Optional[Dict[str, Any]]:
 
 
 def delete_session(session_id: str) -> bool:
-    """Delete a session file from disk.
+    """Delete a session file and its per-session directory (reference images, etc.) from disk.
     
     Args:
         session_id: Session ID
         
     Returns:
-        True if deleted, False if not found
+        True if the session file was deleted, False if not found
     """
     try:
         session_file = SESSION_DIR / f"{session_id}.json"
-        
+        session_dir = SESSION_DIR / session_id
+
         if not session_file.exists():
             return False
-        
+
         session_file.unlink()
         logger.info(f"Deleted session {session_id} from {session_file}")
+
+        if session_dir.exists() and session_dir.is_dir():
+            shutil.rmtree(session_dir)
+            logger.info(f"Deleted session directory {session_dir}")
+
         return True
-        
+
     except Exception as e:
         logger.error(f"Failed to delete session {session_id}: {e}", exc_info=True)
         return False
