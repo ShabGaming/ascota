@@ -208,19 +208,19 @@ def classify_pottery_decoration(
             "method": "DINOv2 + Logistic Regression"
         }
         
-        # Add confidence score if requested
+        # Add confidence score if requested (probability in [0, 1])
         if return_confidence:
+            if hasattr(classifier, 'predict_proba'):
+                proba = classifier.predict_proba(features_2d)[0]
+                confidence = float(max(proba))  # max class probability, in [0.5, 1] for binary
+                result["confidence"] = confidence
             if hasattr(classifier, 'decision_function'):
                 decision_score = classifier.decision_function(features_2d)[0]
-                # For binary classification, convert to probability-like confidence
-                # Higher absolute value means higher confidence
-                confidence = abs(decision_score)
-                result["confidence"] = float(confidence)
                 result["decision_score"] = float(decision_score)
-                
                 if debug:
                     print(f"Decision score: {decision_score:.4f}")
-                    print(f"Confidence: {confidence:.4f}")
+            if "confidence" in result and debug:
+                print(f"Confidence: {result['confidence']:.4f}")
         
         # Add model parameters if available
         if params is not None:
@@ -314,12 +314,13 @@ def batch_classify_pottery_decoration(
                 "method": "DINOv2 + Logistic Regression"
             }
             
-            # Add confidence if requested
-            if return_confidence and hasattr(classifier, 'decision_function'):
-                decision_score = classifier.decision_function(features_2d)[0]
-                confidence = abs(decision_score)
-                result["confidence"] = float(confidence)
-                result["decision_score"] = float(decision_score)
+            # Add confidence if requested (probability in [0, 1])
+            if return_confidence:
+                if hasattr(classifier, 'predict_proba'):
+                    proba = classifier.predict_proba(features_2d)[0]
+                    result["confidence"] = float(max(proba))
+                if hasattr(classifier, 'decision_function'):
+                    result["decision_score"] = float(classifier.decision_function(features_2d)[0])
             
             # Add model parameters to first result only
             if i == 0 and params is not None:
