@@ -6,6 +6,10 @@ This module classifies pottery types using a multi-stage pipeline:
 - Stage 2: base vs rim vs appendage (if not body)
 - Stage 3: appendage subtypes using Azure OpenAI GPT-4o (optional, if appendage)
 
+Pottery vs non-pottery uses the same DINOv2-large features and a single sklearn
+classifier as in notebooks/pottery_non_pottery.ipynb; place joblib artifacts under
+ascota_classification/models/.
+
 The classification uses pre-trained DINOv2 ViT-L/14 model for feature extraction with
 optimized classifiers for each stage.
 """
@@ -33,6 +37,7 @@ from io import BytesIO
 # Default model paths (relative to module)
 DEFAULT_MODEL_PATH_STAGE1 = "models/type_1_dinov2_large_svm_rbf.pkl"
 DEFAULT_MODEL_PATH_STAGE2 = "models/type_2_dinov2_large_svm_rbf.pkl"
+DEFAULT_MODEL_PATH_POTTERY_BINARY = "models/pottery_binary_svm_rbf_optimized.pkl"
 
 
 def _load_dino_model(device: torch.device) -> AutoModel:
@@ -130,6 +135,68 @@ def _load_classifier(model_path: Path) -> Tuple[any, Optional[Dict]]:
         return classifier, params
     except Exception as e:
         raise RuntimeError(f"Failed to load classifier: {e}")
+
+
+def _load_pottery_binary_classifier(model_path: Path) -> Tuple[any, Optional[Dict]]:
+    """
+    Load binary pottery classifier from pottery_non_pottery.ipynb exports.
+
+    The notebook saves ``pottery_binary_<name>_optimized.pkl`` and
+    ``pottery_binary_<name>_params.pkl``.
+    """
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Model file not found: {model_path}\n"
+            "Train with notebooks/pottery_non_pottery.ipynb and copy the .pkl files "
+            f"to {model_path.parent}."
+        )
+    try:
+        classifier = joblib.load(model_path)
+        params = None
+        name = model_path.name
+        if name.endswith("_optimized.pkl"):
+            params_path = model_path.with_name(name.replace("_optimized.pkl", "_params.pkl"))
+        else:
+            params_path = model_path.parent / model_path.name.replace(".pkl", "_params.pkl")
+        if params_path.exists():
+            params = joblib.load(params_path)
+        return classifier, params
+    except Exception as e:
+        raise RuntimeError(f"Failed to load pottery binary classifier: {e}")
+
+
+def _classify_pottery_binary(
+    features: np.ndarray,
+    classifier: any,
+    debug: bool = False,
+) -> Tuple[str, float, float]:
+    """
+    Binary pottery (1) vs non-pottery (0), matching the notebook's y encoding.
+
+    Returns:
+        (label, max-class confidence, P(pottery)).
+    """
+    features_2d = features.reshape(1, -1)
+    if hasattr(classifier, "predict_proba"):
+        proba = classifier.predict_proba(features_2d)[0]
+        classes = list(getattr(classifier, "classes_", [0, 1]))
+        if 1 not in classes:
+            raise RuntimeError(f"Expected class 1 = pottery in classifier.classes_, got {classes}")
+        idx_pottery = classes.index(1)
+        p_pottery = float(proba[idx_pottery])
+        prediction = int(classifier.predict(features_2d)[0])
+        confidence = float(np.max(proba))
+    else:
+        prediction = int(classifier.predict(features_2d)[0])
+        p_pottery = 1.0 if prediction == 1 else 0.0
+        confidence = 1.0
+
+    label = "pottery" if prediction == 1 else "non_pottery"
+
+    if debug:
+        print(f"_classify_pottery_binary: {label} P(pottery)={p_pottery:.4f} conf={confidence:.4f}")
+
+    return label, confidence, p_pottery
 
 
 def _classify_stage1(
@@ -505,6 +572,57 @@ def classify_pottery_type(
         raise RuntimeError(f"Classification failed: {e}")
 
 
+
+def classify_pottery_vs_non_pottery(
+    image: Image.Image,
+    model_path: Optional[Path] = None,
+    return_confidence: bool = True,
+    debug: bool = False,
+) -> Dict[str, any]:
+    """
+    Classify image as pottery vs non-pottery using DINOv2-large + sklearn (notebook pipeline).
+
+    Training labels match notebooks/pottery_non_pottery.ipynb: 0 = non_pottery, 1 = pottery.
+    Copy ``pottery_binary_<model>_optimized.pkl`` and ``pottery_binary_<model>_params.pkl``
+    into ``ascota_classification/models/`` (default expects svm_rbf).
+
+    Args:
+        image: PIL Image (RGBA or RGB)
+        model_path: Path to joblib classifier. If None, uses DEFAULT_MODEL_PATH_POTTERY_BINARY.
+        return_confidence: If True, include ``confidence`` and ``p_pottery`` in the result.
+        debug: Verbose logging.
+
+    Returns:
+        Dict with ``label`` in {"pottery", "non_pottery"}, and if return_confidence:
+        ``confidence`` (max predicted class probability) and ``p_pottery``.
+    """
+    if model_path is None:
+        model_path = Path(__file__).parent / DEFAULT_MODEL_PATH_POTTERY_BINARY
+    elif isinstance(model_path, str):
+        model_path = Path(model_path)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if debug:
+        print(f"classify_pottery_vs_non_pottery: model={model_path} device={device}")
+
+    try:
+        dino_model = _load_dino_model(device)
+        features = _extract_features(image, dino_model, device)
+        classifier, params = _load_pottery_binary_classifier(model_path)
+        label, confidence, p_pottery = _classify_pottery_binary(features, classifier, debug)
+
+        out: Dict[str, any] = {"label": label, "method": "DINOv2-large + sklearn (pottery binary)"}
+        if return_confidence:
+            out["confidence"] = confidence
+            out["p_pottery"] = p_pottery
+        if params is not None:
+            out["model_params"] = params
+        return out
+    except Exception as e:
+        raise RuntimeError(f"Pottery vs non-pottery classification failed: {e}")
+
+
+
 def batch_classify_pottery_type(
     images: list[Image.Image],
     model_path_stage1: Optional[Path] = None,
@@ -631,3 +749,41 @@ def batch_classify_pottery_type(
     except Exception as e:
         raise RuntimeError(f"Batch classification failed: {e}")
 
+
+def batch_classify_pottery_vs_non_pottery(
+    images: list[Image.Image],
+    model_path: Optional[Path] = None,
+    return_confidence: bool = True,
+    debug: bool = False,
+) -> list[Dict[str, any]]:
+    """
+    Batch pottery vs non-pottery classification; loads DINO and classifier once.
+
+    See :func:`classify_pottery_vs_non_pottery` for paths and return fields.
+    """
+    if model_path is None:
+        model_path = Path(__file__).parent / DEFAULT_MODEL_PATH_POTTERY_BINARY
+    elif isinstance(model_path, str):
+        model_path = Path(model_path)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if debug:
+        print(f"batch_classify_pottery_vs_non_pottery: {len(images)} images device={device}")
+
+    try:
+        dino_model = _load_dino_model(device)
+        classifier, _ = _load_pottery_binary_classifier(model_path)
+        out = []
+        for i, image in enumerate(images):
+            if debug and (i + 1) % 20 == 0:
+                print(f"  {i + 1}/{len(images)}")
+            features = _extract_features(image, dino_model, device)
+            label, confidence, p_pottery = _classify_pottery_binary(features, classifier, False)
+            row: Dict[str, any] = {"label": label, "method": "DINOv2-large + sklearn (pottery binary)"}
+            if return_confidence:
+                row["confidence"] = confidence
+                row["p_pottery"] = p_pottery
+            out.append(row)
+        return out
+    except Exception as e:
+        raise RuntimeError(f"Batch pottery vs non-pottery classification failed: {e}")
