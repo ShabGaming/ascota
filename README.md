@@ -90,15 +90,15 @@ ASCOTA currently includes three main product applications:
 
 - **Color Correct** (`color_correct`)  
   Batch clustering + color correction workflow for excavation images.  
-  See: [`color_correct/README.md`](color_correct/README.md)
+  See: [`color_correct/README.md`](https://github.com/ShabGaming/ascota/blob/main/color_correct/README.md)
 
 - **Preprocess** (`preprocess`)  
   3-stage preprocessing workflow (card detection, segmentation, scale/surface area).  
-  See: [`preprocess/README.md`](preprocess/README.md)
+  See: [`preprocess/README.md`](https://github.com/ShabGaming/ascota/blob/main/preprocess/README.md)
 
 - **Classification** (`classification`)  
   Classification workflows for pottery/type/decoration/color/texture with export.  
-  See: [`classification/README.MD`](classification/README.MD)
+  See: [`classification/README.MD`](https://github.com/ShabGaming/ascota/blob/main/classification/README.MD)
 
 ### Recommended run order
 
