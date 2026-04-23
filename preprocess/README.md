@@ -1,18 +1,26 @@
 # Preprocess Pipeline Application
 
-A local web application for 3-stage preprocessing pipeline: card detection, background segmentation, and scale calculation. Processes images through sequential stages with user feedback, saving all results to `.ascota` metadata folders.
+Local web application for a 3-stage preprocessing pipeline: card detection,
+background segmentation, and scale/surface-area calculation. It processes
+images sequentially with manual correction tools and stores outputs in each
+find's `.ascota` folder.
 
 ## Features
 
-- **Stage 1: Card Detection** - Automatically detects color reference cards with manual editing capability
-- **Stage 2: Background Segmentation** - Generates masks with interactive brush painting
-- **Stage 3: Scale Calculation** - Calculates pixels per cm and surface area with manual point adjustment
+- **Stage 1: Card Detection** - auto-detect cards, then add/edit/delete card polygons.
+- **Stage 2: Background Segmentation** - generate masks, edit with brush tools, and
+  run wand-select refinements for quick region updates.
+- **Stage 3: Scale Calculation** - compute pixels-per-cm and surface area, with
+  manual center adjustment for 8-hybrid card workflows.
+- **Stage Save Flow** - explicit save endpoints per stage to persist metadata
+  before advancing.
 
 ## Architecture
 
-- **Backend**: FastAPI (Python) - handles image processing, detection, segmentation, and scale calculation
-- **Frontend**: React + Vite + Chakra UI - clean, responsive interface
-- **State**: In-memory session storage with react-query for data fetching
+- **Backend**: FastAPI (Python) for scanning, detection, segmentation, wand
+  operations, and scale computation.
+- **Frontend**: React + Vite + Chakra UI.
+- **State**: session-based flow with API-backed persistence to `.ascota` data.
 
 ## Project Structure
 
@@ -116,6 +124,7 @@ The app will be available at `http://localhost:5174`
   - Use "Paint Out" to mark background areas
   - Adjust brush size with the slider
   - Toggle mask visibility
+  - Use wand-select to expand selection from clicked regions
 - Click "Next Stage" to save and proceed
 
 ### 4. Stage 3: Scale Calculation
@@ -125,7 +134,7 @@ The app will be available at `http://localhost:5174`
   - Pixels per cm
   - Surface area in cm²
   - Calculation method used
-- For 8-hybrid cards: Click the result card to edit circle centers
+- For 8-hybrid cards: click the result card to edit circle centers
   - Drag the three circle centers to adjust positions
   - Click "Recalculate & Save" to update scale
 - Click "Save Results" to finalize

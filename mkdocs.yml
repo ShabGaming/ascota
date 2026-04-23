@@ -64,6 +64,8 @@ nav:
   - Home: index.md
   - Apps (Streamlit): apps.md
   - Color Correction App: color_correction_app.md
+  - Preprocess App: preprocess_app.md
+  - Classification App: classification_app.md
   - API Reference:
       - ascota_core:
           - Overview: api/ascota_core/index.md
@@ -71,9 +73,11 @@ nav:
           - imaging: api/ascota_core/imaging.md
           - scale: api/ascota_core/scale.md
           - utils: api/ascota_core/utils.md
+          - mobilesam_wand: api/ascota_core/mobilesam_wand.md
       - ascota_classification:
           - Overview: api/ascota_classification/index.md
           - color: api/ascota_classification/color.md
+          - texture: api/ascota_classification/texture.md
           - decoration: api/ascota_classification/decoration.md
           - type: api/ascota_classification/type.md
           

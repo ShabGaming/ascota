@@ -84,6 +84,64 @@ Open locally on your browser at [http://localhost:8000](http://localhost:8000) o
 
 ---
 
+## Products
+
+ASCOTA currently includes three main product applications:
+
+- **Color Correct** (`color_correct`)  
+  Batch clustering + color correction workflow for excavation images.  
+  See: [`color_correct/README.md`](color_correct/README.md)
+
+- **Preprocess** (`preprocess`)  
+  3-stage preprocessing workflow (card detection, segmentation, scale/surface area).  
+  See: [`preprocess/README.md`](preprocess/README.md)
+
+- **Classification** (`classification`)  
+  Classification workflows for pottery/type/decoration/color/texture with export.  
+  See: [`classification/README.MD`](classification/README.MD)
+
+### Recommended run order
+
+1. **Color Correct** (recommended, not required)
+2. **Preprocess** (required before Classification)
+3. **Classification**
+
+`Classification` expects preprocessed context/images.  
+Running `Color Correct` before `Preprocess` and `Classification` is recommended for better consistency, but it is optional.
+
+---
+
+## System Workflow Diagram
+
+```mermaid
+flowchart TD
+  rawContexts["Excavation Contexts and Images"]
+  colorCorrect["color_correct Product (Recommended)"]
+  preprocess["preprocess Product (Required before Classification)"]
+  classification["classification Product"]
+
+  coreLayer["ascota_core (Card Detection, Segmentation, Scale, Surface Area)"]
+  classLayer["ascota_classification (Pottery, Type, Decoration, Color, Texture)"]
+
+  preprocessOutputs["Preprocess Artifacts (.ascota/preprocess.json and masks)"]
+  classificationOutputs["Classification Artifacts (.ascota/classification.json)"]
+
+  rawContexts -->|"Optional but recommended path"| colorCorrect
+  rawContexts -->|"Direct path"| preprocess
+  colorCorrect --> preprocess
+  preprocess --> preprocessOutputs
+  preprocess --> classification
+  classification --> classificationOutputs
+
+  coreLayer --> preprocess
+  classLayer --> classification
+```
+
+`Preprocess` is required before running `Classification`.  
+`Color Correct` is recommended first for better image consistency, but ASCOTA can still run without it.
+
+---
+
 ## Getting Started
 
 Clone and install dependencies:

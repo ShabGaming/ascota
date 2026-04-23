@@ -8,6 +8,9 @@ The module uses a pre-trained DINOv2 ViT-L/14 model for feature extraction
 combined with an optimized Linear Logistic Regression classifier, providing
 accurate and reliable classification of pottery decoration patterns from
 images with transparent backgrounds.
+
+It also provides batch helpers for running decoration classification across
+multiple images in one call.
 ---
 
 ::: ascota_classification.decoration

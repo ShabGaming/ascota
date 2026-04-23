@@ -37,3 +37,4 @@ Together, these ensure later classification is performed on calibrated, comparab
 - [imaging](imaging.md): segmentation utilities and color card detection.  
 - [scale](scale.md): scale estimation and pixel-to-centimeter conversion.  
 - [utils](utils.md): shared helpers and lower-level routines.
+- [mobilesam_wand](mobilesam_wand.md): interactive point-prompt segmentation session API.

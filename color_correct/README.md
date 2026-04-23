@@ -1,19 +1,28 @@
-A local web application for batch color correction with intelligent clustering. Process multiple contexts simultaneously, cluster images by lighting conditions, apply corrections per cluster, and export corrected images at multiple resolutions.
+Local web application for batch color correction with clustering. Process
+multiple contexts, group images by lighting condition, apply cluster-level or
+per-image corrections, and export corrected outputs at multiple resolutions.
 
 ## Features
 
-- **Intelligent Clustering**: Automatically groups images by lighting conditions using corner analysis
-- **Drag & Drop**: Move images between clusters for fine-tuned control
-- **Auto-Correction**: One-click white balance and exposure correction per cluster
-- **Manual Controls**: Fine-tune temperature, tint, exposure, contrast, saturation, and RGB gains
-- **Batch Export**: Export at 3000px, 1500px, and 450px widths with overwrite or suffix options
-- **Live Preview**: See corrections in real-time before exporting
+- **Lighting-based clustering**: Automatically groups images by corner-derived
+  lighting features.
+- **Drag & drop cluster curation**: Move images between clusters and undo
+  recent clustering edits.
+- **Cluster and image-level corrections**: Auto-correct or manually tune
+  temperature, tint, exposure, contrast, saturation, and RGB gains.
+- **Reference image workflows**: Add/remove reference images and load preset
+  references via API-backed session endpoints.
+- **Session restore**: Re-open and restore previous sessions to continue work.
+- **Batch export**: Export at 3000px, 1500px, and 450px widths with overwrite
+  or suffix strategies.
+- **Live preview**: Preview correction results before export.
 
 ## Architecture
 
-- **Backend**: FastAPI (Python) - handles image processing, clustering, and export
-- **Frontend**: React + Vite + Chakra UI - clean, responsive interface
-- **State**: In-memory session storage with react-query for data fetching
+- **Backend**: FastAPI (Python) for session control, clustering, previews,
+  reference images, and export.
+- **Frontend**: React + Vite + Chakra UI.
+- **State**: session-centric workflow with API-backed operations.
 
 ## Project Structure
 
@@ -96,6 +105,7 @@ The app automatically:
 - View clusters in columns
 - **Drag images** between clusters to rearrange
 - **Click "Auto-Correct"** on a cluster to estimate white balance
+- Add or remove **reference images** for consistent correction targets
 - **Select an image** to open the correction panel
 - **Adjust sliders** for fine-tuning:
   - Temperature & Tint
@@ -103,6 +113,7 @@ The app automatically:
   - Contrast & Saturation
   - RGB Gains
 - **Apply to Cluster** to save corrections
+- Optionally set **individual image correction** overrides
 
 ### 4. Export
 
@@ -162,4 +173,5 @@ All images preserve aspect ratio and are resized by width.
 Once the backend is running, visit:
 - API docs: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
+- Preset references: `http://localhost:8000/preset-references`
 

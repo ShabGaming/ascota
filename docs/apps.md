@@ -22,7 +22,11 @@ streamlit run tests/streamlits/color_correct_streamlit.py
 streamlit run tests/streamlits/scale_streamlit.py
 streamlit run tests/streamlits/segment_streamlit.py
 streamlit run tests/streamlits/color_clustering_streamlit.py
-streamlit run tests/streamlits/color_classification_streamlit.py
+streamlit run tests/streamlits/color_clustering_lab_streamlit.py
+streamlit run tests/streamlits/decoration_classification_streamlit.py
+streamlit run tests/streamlits/type_classification_streamlit.py
+streamlit run tests/streamlits/type_pottery_non_pottery_streamlit.py
+streamlit run tests/streamlits/texture_clustering_streamlit.py
 ```
 
 Open your browser at [http://localhost:8501](http://localhost:8501).
@@ -74,14 +78,48 @@ Open your browser at [http://localhost:8501](http://localhost:8501).
 
 ---
 
-### 🖌️ Color Classification
+### 🖌️ Color Clustering (Lab)
 
-**File:** `color_classification_streamlit.py`
+**File:** `color_clustering_lab_streamlit.py`
 
-* Classifies pottery sherds based on their color attributes.
-* Implements three methods: lab thresholding, k-means clustering, and CLIP-ViT based classification.
-* Provides visualizations of color distributions and dominant colors.
-* Helps archaeologists systematically categorize sherds for analysis.
+* Runs Lab-summary-based clustering experiments for grouped pottery imagery.
+* Helps evaluate color-separation behavior before running full product workflows.
+
+---
+
+### 🧩 Decoration Classification
+
+**File:** `decoration_classification_streamlit.py`
+
+* Demonstrates decoration classification over segmented sherd images.
+* Useful for testing model outputs and confidence behavior quickly.
+
+---
+
+### 🏺 Type Classification
+
+**File:** `type_classification_streamlit.py`
+
+* Demonstrates multi-stage pottery type classification.
+* Useful for validating labels and confidence distributions on sample sets.
+
+---
+
+### 🏷️ Pottery Gate
+
+**File:** `type_pottery_non_pottery_streamlit.py`
+
+* Runs pottery vs non-pottery gating for quick dataset screening.
+* Useful as a pre-step before detailed type classification.
+
+---
+
+### 🪨 Texture Clustering
+
+**File:** `texture_clustering_streamlit.py`
+
+* Groups images by texture similarity using extracted surface features.
+* Helps inspect texture-driven grouping before downstream labeling.
 
 ---
 

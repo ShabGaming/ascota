@@ -1,11 +1,13 @@
 # ascota_classification.color
 
-The classification `color` module provides functionality for classifying
-pottery sherds based on their color attributes. It includes methods for
-classifying colors into predefined categories, extracting dominant colors from
-images, and visualizing color distributions using 3 different methods. The methods
-include lab thresholding, k-means clustering, and CLIP-ViT based classification. This
-ensures that pottery sherds can be systematically categorized based on their color.
+The `color` module provides **feature extraction and clustering** utilities for
+grouping pottery images by color similarity.
+
+Current functionality centers on:
+
+- compact Lab-based image summaries,
+- PCA feature extraction, and
+- HDBSCAN clustering (directly or via a high-level directory pipeline).
 ---
 
 ::: ascota_classification.color

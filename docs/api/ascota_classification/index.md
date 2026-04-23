@@ -1,23 +1,26 @@
 # ascota_classification
 
-`ascota_classification` is the **second stage of the ASCOTA pipeline**. Currently in development.  
+`ascota_classification` is the **second stage of the ASCOTA pipeline**.
+It provides model-based classification and feature clustering utilities for
+preprocessed pottery imagery.
 
 ## Purpose
-In this package, we focus on:  
 
-- **Classification of sherd types**: Using deep learning models to classify pottery fragments into
-  predefined categories based on shape and size.  
+This package focuses on:
 
-- **Color Classification**: Extracting relevant color features from segmented and color-corrected images
-    to support classification and analysis.  
-
-- **Texture Classification**: Identifying and labeling surface textures of pottery fragments to aid in
-    classification and comparative analysis.  
-
-- **Pattern/Decoration Classification**: Use vision transformer models to identify and classify decorative patterns
-    on pottery fragments.  
+- **Type classification**
+  Multi-stage pottery type classification pipelines, including optional
+  appendage subtype refinement.
+- **Decoration classification**
+  DINOv2 feature extraction with a trained classifier for decoration labels.
+- **Color clustering**
+  Lab-based feature extraction and HDBSCAN clustering for visually similar images.
+- **Texture clustering**
+  Texture feature extraction (LBP + GLCM), PCA projection, and HDBSCAN grouping.
 
 ## Submodules
-- [color](color.md): color-based classification of pottery sherds.
-- [decoration](decoration.md): decoration pattern classification of pottery sherds.
-- [type](type.md): type classification of pottery sherds.
+
+- [color](color.md): Lab feature extraction and color similarity clustering.
+- [texture](texture.md): texture feature extraction and clustering.
+- [decoration](decoration.md): pottery decoration classification.
+- [type](type.md): pottery type and pottery/non-pottery classification.
