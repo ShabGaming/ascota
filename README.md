@@ -104,6 +104,16 @@ streamlit run tests/streamlits/color_correct_streamlit.py # Demo app for color c
 
 ---
 
+## Utils
+
+### SAM wand UI
+
+This will open the SAM wand UI. Used to remove background from images quickly and easily. The transparent image or mask will be saved in the existing folder.
+
+```bash
+python -m utils.sam_wand_ui
+```
+
 ## Research Vision
 
 ASCOTA is more than a software project—it is part of a **research initiative**
