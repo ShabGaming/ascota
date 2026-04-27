@@ -188,7 +188,7 @@ This work will contribute to academic publication in collaboration with
 
 ## License
 
-[MIT License](LICENSE) — Open for academic and research use.
+[Apache License 2.0](LICENSE) — Open for academic and research use.
 
 
 ## Acknowledgements
